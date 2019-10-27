@@ -1,0 +1,35 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+
+layout(binding = 0, r11f_g11f_b10f) uniform image2D OutColor;
+layout(binding = 1) uniform sampler2D Temporal;
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+void main()
+{
+	ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 dim = imageSize(OutColor);
+	if (any(greaterThanEqual(coord, dim)))
+	{
+	    return;
+	}
+
+	//   a
+	// b c d
+	//   e
+	vec4 a = texelFetch(Temporal, coord + ivec2( 0, -1), 0);
+	vec4 b = texelFetch(Temporal, coord + ivec2(-1,  0), 0);
+	vec4 c = texelFetch(Temporal, coord + ivec2( 0,  0), 0);
+	vec4 d = texelFetch(Temporal, coord + ivec2( 1,  0), 0);
+	vec4 e = texelFetch(Temporal, coord + ivec2( 0,  1), 0);
+
+	a.rgb /= max(a.a, 1e-6);
+	b.rgb /= max(b.a, 1e-6);
+	c.rgb /= max(c.a, 1e-6);
+	d.rgb /= max(d.a, 1e-6);
+	e.rgb /= max(e.a, 1e-6);
+
+	const float sharpness = 0.5;
+	vec3 color = max(vec3(0.0), c.rgb * (1.0 + sharpness) - (a.rgb + b.rgb + d.rgb + e.rgb) * (0.25 * sharpness));
+	imageStore(OutColor, ivec2(gl_GlobalInvocationID.xy), vec4(color, 0.0));
+}

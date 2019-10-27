@@ -1,0 +1,86 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "AtmosphereCommon.glsl"
+
+layout(binding = 0, rgba16f) uniform image1D AmbientLightLUT;
+
+layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+	int size = imageSize(AmbientLightLUT);
+	if (gl_GlobalInvocationID.x >= size)
+	{
+	    return;
+	}
+	
+	float tex_coord = (float(gl_GlobalInvocationID.x) + 0.5) / float(size);
+	
+	// Calculate light direction
+	float light_angle = TexCoordToLightAngle(tex_coord);
+	vec3 light_dir = normalize(vec3(sqrt(clamp(1.0 - light_angle * light_angle, 0.0, 1.0)), light_angle, 0.0));
+
+	vec3 irradiance = vec3(0.0);
+
+	// Generate rays over a hemisphere
+	float ray_count = 0.0;
+	for (float phi = 0.0; phi < 2.0 * PI; phi += 0.025)
+	{
+		for (float theta = 0.0; theta < 0.5 * PI; theta += 0.025)
+		{
+			// Create ray
+			vec3 ray_orig = vec3(0.0, PLANET_RADIUS + HEIGHT_ABOVE_GROUND, 0.0);
+			vec3 ray_dir = normalize(vec3(sin(theta) * cos(phi), cos(theta), sin(theta) * sin(phi)));
+			
+			// Test intersection ray vs planet
+			vec2 intersection = RaySphereIntersection(ray_orig, ray_dir, PLANET_RADIUS);
+			float ray_len = intersection.y > 0.0 ? intersection.x : LARGE_VALUE;
+			
+			// Test intersection ray vs atmosphere
+			intersection = RaySphereIntersection(ray_orig, ray_dir, ATMOSPHERE_RADIUS);
+			ray_len = min(ray_len, intersection.y);
+
+			const int step_count = 64;
+			float step_len = ray_len / float(step_count);
+
+			vec2 density_orig_to_point = vec2(0.0, 0.0);
+			vec3 scatter_r = vec3(0.0, 0.0, 0.0);
+			vec3 scatter_m = vec3(0.0, 0.0, 0.0);
+			
+			// Step in the ray direction
+			for (int i = 0; i < step_count; ++i)
+			{
+				vec3 point_on_ray = ray_orig + ray_dir * ((float(i) + 0.5) * step_len);
+				
+				// Calculate local density
+				vec2 density = LocalDensity(point_on_ray) * step_len;
+				density_orig_to_point += density;
+
+				// Calculate density from point to atmosphere
+				vec2 density_point_to_atmosphere = DensityToAtmosphere(point_on_ray, light_dir);
+
+				// Calculate scattering contribution
+				vec2 density_orig_to_atmosphere = density_orig_to_point + density_point_to_atmosphere;
+				vec3 extinction = Extinction(density_orig_to_atmosphere);
+				scatter_r += density.x * extinction;
+				scatter_m += density.y * extinction;
+			}
+			
+			// Calculate phase functions
+			// Phase functions describe how much light is scattered when colliding with particles
+			float cos_angle = dot(ray_dir, light_dir);
+			float phase_r = PhaseR(cos_angle);
+			float phase_m = PhaseM(cos_angle);
+			
+			// Accumulate irradiance
+			vec3 radiance = scatter_r * phase_r * BETA_R + scatter_m * phase_m * BETA_M;
+			irradiance += radiance * (cos(theta) * sin(theta));
+
+			// Increment ray count
+			ray_count += 1.0;
+		}
+	}
+	irradiance *= PI / ray_count;
+	
+	imageStore(AmbientLightLUT, int(gl_GlobalInvocationID.x), vec4(irradiance, 0.0));
+}

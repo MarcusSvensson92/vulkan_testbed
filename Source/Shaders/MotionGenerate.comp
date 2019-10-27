@@ -1,0 +1,29 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+
+layout(binding = 0) uniform Constants
+{
+	mat4	CurrToPrev;
+};
+layout(binding = 1, rgba16f) uniform image2D Motion;
+layout(binding = 2) uniform sampler2D LinearDepth;
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+void main()
+{
+	ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(Motion);
+	if (any(greaterThanEqual(coord, size)))
+	{
+	    return;
+	}
+
+	float lin_depth = texelFetch(LinearDepth, coord, 0).r;
+
+	vec2 curr_tex_coord = (vec2(coord) + 0.5) / vec2(size);
+	vec4 curr_pos = vec4(curr_tex_coord * lin_depth, 1.0, lin_depth);
+	vec4 prev_pos = CurrToPrev * curr_pos;
+	vec2 prev_tex_coord = prev_pos.xy / prev_pos.w;
+	vec3 motion = vec3(prev_tex_coord - curr_tex_coord, prev_pos.w - curr_pos.w);
+	imageStore(Motion, coord, vec4(motion, 0.0));
+}

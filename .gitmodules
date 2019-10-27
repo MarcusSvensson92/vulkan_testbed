@@ -1,0 +1,24 @@
+[submodule "External/cgltf"]
+	path = External/cgltf
+	url = https://github.com/jkuhlmann/cgltf.git
+[submodule "External/glfw"]
+	path = External/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "External/glm"]
+	path = External/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "External/imgui"]
+	path = External/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "External/stb"]
+	path = External/stb
+	url = https://github.com/nothings/stb.git
+[submodule "External/VulkanMemoryAllocator"]
+	path = External/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "External/volk"]
+	path = External/volk
+	url = https://github.com/zeux/volk.git
+[submodule "Assets/glTF-Sample-Models"]
+	path = Assets/glTF-Sample-Models
+	url = https://github.com/KhronosGroup/glTF-Sample-Models.git

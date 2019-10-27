@@ -1,0 +1,20 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+
+layout(binding = 0, r16) uniform image2D OutShadow;
+layout(binding = 1) uniform sampler2D Shadow;
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+void main()
+{
+	ivec2 tex_size = imageSize(OutShadow);
+	if (any(greaterThanEqual(gl_GlobalInvocationID.xy, tex_size)))
+	{
+	    return;
+	}
+	vec2 tex_size_rcp = 1.0 / vec2(tex_size);
+	vec2 tex_coord = (vec2(gl_GlobalInvocationID.xy) + 0.5) * tex_size_rcp;
+
+	float shadow = texture(Shadow, tex_coord).r;
+	imageStore(OutShadow, ivec2(gl_GlobalInvocationID.xy), vec4(shadow, 0.0, 0.0, 0.0));
+}

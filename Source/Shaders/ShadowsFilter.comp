@@ -1,0 +1,61 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+
+layout(binding = 0) uniform Constants
+{
+	int		StepSize;
+	float	PhiVariance;
+};
+layout(binding = 1, rg16) uniform image2D OutShadowVariance;
+layout(binding = 2) uniform sampler2D ShadowVariance;
+layout(binding = 3) uniform sampler2D LinearDepth;
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+void main()
+{
+	ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(OutShadowVariance);
+	if (any(greaterThanEqual(coord, size)))
+	{
+	    return;
+	}
+
+	vec2 center_shadow_variance = texelFetch(ShadowVariance, coord, 0).rg;
+	vec2 center_lin_depth = texelFetch(LinearDepth, coord, 0).rg;
+
+	float phi_variance = sqrt(max(1e-6, center_shadow_variance.g)) * PhiVariance;
+	float phi_depth = (center_lin_depth.g + 1e-4) * StepSize;
+
+	vec2 shadow_variance_sum = center_shadow_variance;
+	float shadow_variance_weight_sum = 1.0;
+
+	for (int y = -1; y <= 1; ++y)
+	{
+		for (int x = -1; x <= 1; ++x)
+		{
+			if (x == 0 && y == 0)
+				continue;
+
+			ivec2 sample_coord = coord + ivec2(x, y) * StepSize;
+			if (any(lessThan(sample_coord, ivec2(0, 0))) || any(greaterThanEqual(sample_coord, size)))
+				continue;
+
+			const float weights[2] = { 1.0, 2.0 / 3.0 };
+			float sample_weight = weights[abs(x)] * weights[abs(y)];
+
+			vec2 sample_shadow_variance = texelFetch(ShadowVariance, sample_coord, 0).rg;
+			float sample_depth = texelFetch(LinearDepth, sample_coord, 0).r;
+
+			// Edge-stopping variance and depth weight
+			float variance_displacement = abs(center_shadow_variance.r - sample_shadow_variance.r) / phi_variance;
+			float depth_displacement = abs(center_lin_depth.r - sample_depth) / phi_depth;
+			sample_weight *= exp(-max(0.0, variance_displacement) - max(0.0, depth_displacement));
+
+			shadow_variance_sum += sample_shadow_variance * vec2(sample_weight, sample_weight * sample_weight);
+			shadow_variance_weight_sum += sample_weight;
+		}
+	}
+
+	vec2 shadow_variance = shadow_variance_sum / vec2(shadow_variance_weight_sum, shadow_variance_weight_sum * shadow_variance_weight_sum);
+	imageStore(OutShadowVariance, ivec2(gl_GlobalInvocationID.xy), vec4(shadow_variance, 0.0, 0.0));
+}

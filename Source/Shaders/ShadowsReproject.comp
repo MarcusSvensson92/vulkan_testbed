@@ -1,0 +1,116 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+
+layout(binding = 0) uniform Constants
+{
+	float	AlphaShadow;
+	float	AlphaMoments;
+	bool	IsHistValid;
+};
+layout(binding = 1, rg16) uniform image2D ShadowVariance;
+layout(binding = 2, rgba16) uniform image2D Temporal;
+layout(binding = 3) uniform sampler2D TemporalHist;
+layout(binding = 4) uniform sampler2D Shadow;
+layout(binding = 5) uniform sampler2D Motion;
+layout(binding = 6) uniform sampler2D LinearDepth;
+layout(binding = 7) uniform sampler2D LinearDepthHist;
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+void main()
+{
+	ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(ShadowVariance);
+	if (any(greaterThanEqual(coord, size)))
+	{
+	    return;
+	}
+
+	vec2 center_lin_depth = texelFetch(LinearDepth, coord, 0).rg;
+	float phi_depth = center_lin_depth.g + 1e-4;
+
+	vec2 moments_sum = vec2(0.0, 0.0);
+	float moments_weight_sum = 0.0;
+	
+	for (int y = -1; y <= 1; ++y)
+	{
+		for (int x = -1; x <= 1; ++x)
+		{
+			ivec2 sample_coord = coord + ivec2(x, y);
+			if (any(lessThan(sample_coord, ivec2(0, 0))) || any(greaterThanEqual(sample_coord, size)))
+				continue;
+
+			float sample_weight = 1.0;
+			if (x != 0 || y != 0)
+			{
+				float sample_depth = texelFetch(LinearDepth, sample_coord, 0).r;
+				sample_weight *= clamp(1.0 - abs(sample_depth - center_lin_depth.r) / phi_depth, 0.0, 1.0);
+			}
+
+			float sample_shadow = texelFetch(Shadow, sample_coord, 0).r;
+			vec2 sample_moments = vec2(sample_shadow, sample_shadow * sample_shadow);
+
+			moments_sum += sample_moments * sample_weight;
+			moments_weight_sum += sample_weight;
+		}
+	}
+	
+	vec2 moments = moments_sum / moments_weight_sum;
+	float shadow = moments.x;
+
+	float hist_len = 1.0;
+	if (IsHistValid)
+	{
+		vec3 motion = texelFetch(Motion, coord, 0).xyz;
+
+		vec2 hist_coord = vec2(coord) + motion.xy * vec2(size);
+		vec2 hist_delta = fract(hist_coord);
+
+		float wx[2] = { 1.0 - hist_delta.x, hist_delta.x };
+		float wy[2] = { 1.0 - hist_delta.y, hist_delta.y };
+
+		center_lin_depth.r += motion.z;
+
+		vec4 hist_sum = vec4(0.0, 0.0, 0.0, 0.0);
+		float hist_weight_sum = 0.0;
+
+		for (int y = 0; y <= 1; ++y)
+		{
+			for (int x = 0; x <= 1; ++x)
+			{
+				ivec2 sample_coord = ivec2(hist_coord) + ivec2(x, y);
+				if (any(lessThan(sample_coord, ivec2(0, 0))) || any(greaterThanEqual(sample_coord, size)))
+					continue;
+
+				float sample_weight = wx[x] * wy[y];
+
+				float sample_depth = texelFetch(LinearDepthHist, sample_coord, 0).r;
+				sample_weight *= clamp(1.0 - abs(sample_depth - center_lin_depth.r) / phi_depth, 0.0, 1.0);
+
+				vec4 sample_hist = texelFetch(TemporalHist, sample_coord, 0);
+				hist_sum += sample_hist * sample_weight;
+				hist_weight_sum += sample_weight;
+			}
+		}
+
+		bool hist_valid = hist_weight_sum > 1e-2;
+		vec4 hist = hist_valid ? hist_sum / hist_weight_sum : vec4(0.0, 0.0, 0.0, 0.0);
+		hist_len = min(32.0, hist_valid ? hist.w * 32.0 + 1.0 : 1.0);
+
+		float alpha_shadow = hist_valid ? max(AlphaShadow, 1.0 / hist_len) : 1.0;
+		float alpha_moments = hist_valid ? max(AlphaMoments, 1.0 / hist_len) : 1.0;
+
+		shadow = mix(hist.x, shadow, alpha_shadow);
+		moments = mix(hist.yz, moments, alpha_moments);
+	}
+
+	float variance = max(0.0, moments.y - moments.x * moments.x);
+
+	// Expand variance slightly if history length is short
+	variance = min(1.0, variance + (0.01 / hist_len));
+
+	float sigma = sqrt(variance);
+	shadow = clamp(shadow, moments.x - sigma, moments.x + sigma);
+
+	imageStore(Temporal, coord, vec4(shadow, moments.x, moments.y, hist_len * (1.0 / 32.0)));
+	imageStore(ShadowVariance, coord, vec4(shadow, variance, 0.0, 0.0));
+}

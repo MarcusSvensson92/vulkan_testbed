@@ -1,0 +1,6 @@
+Build/
+Bin/
+Assets/Shaders/
+*.ini
+*.pdb
+*.ilk

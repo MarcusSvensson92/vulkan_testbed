@@ -1,0 +1,67 @@
+#version 450
+#extension GL_ARB_separate_shader_objects : enable
+
+#define KERNEL_SIZE	4
+
+const float KERNEL_WEIGHTS[KERNEL_SIZE + 1] = { 0.20236, 0.179044, 0.124009, 0.067234, 0.028532 };
+
+layout(binding = 0) uniform Constants
+{
+	ivec2	Direction;
+};
+layout(binding = 1, rgba16f) uniform image2D OutAO;
+layout(binding = 2) uniform sampler2D AO;
+layout(binding = 3) uniform sampler2D Depth;
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+void main()
+{
+	ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+	ivec2 size = imageSize(OutAO);
+	if (any(greaterThanEqual(coord, size)))
+	{
+	    return;
+	}
+
+	float center_depth = texelFetch(Depth, coord, 0).r;
+	float center_ao = texelFetch(AO, coord, 0).r;
+
+	float x  = KERNEL_WEIGHTS[0] * center_depth;
+	float x2 = KERNEL_WEIGHTS[0] * center_depth * center_depth;
+	float xy = KERNEL_WEIGHTS[0] * center_depth * center_ao;
+	float y  = KERNEL_WEIGHTS[0] * center_ao;
+	float w  = KERNEL_WEIGHTS[0];
+
+	for (int i = -KERNEL_SIZE; i <= KERNEL_SIZE; ++i)
+	{
+		if (i == 0)
+			continue;
+
+		ivec2 sample_coord = coord + Direction * i;
+		if (any(lessThan(sample_coord, ivec2(0, 0))) || any(greaterThanEqual(sample_coord, size)))
+			continue;
+
+		float sample_ao = texelFetch(AO, sample_coord, 0).r;
+		float sample_depth = texelFetch(Depth, sample_coord, 0).r;
+
+		float sample_weight = KERNEL_WEIGHTS[abs(i)];
+
+		x  += sample_weight * sample_depth;
+		x2 += sample_weight * sample_depth * sample_depth;
+		xy += sample_weight * sample_depth * sample_ao;
+		y  += sample_weight * sample_ao;
+		w  += sample_weight;
+	}
+
+	x  /= w;
+	x2 /= w;
+	xy /= w;
+	y  /= w;
+
+	const float regularization = 1e-7;
+	float b = (xy - x * y) / ((x2 - x * x) + regularization);
+	float a = y - b * x;
+
+	float ao = b * center_depth + a;
+	imageStore(OutAO, coord, vec4(ao, 0.0, 0.0, 0.0));
+}

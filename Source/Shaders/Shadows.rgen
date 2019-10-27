@@ -1,0 +1,65 @@
+#version 460
+#extension GL_NV_ray_tracing : enable
+
+#define PI 3.14159265
+
+layout(set = 0, binding = 0) uniform Constants
+{
+	mat4	InvViewProjZeroTranslation;
+	vec3	ViewPosition;
+	float	CosAngle;
+	vec3	LightDirection;
+	bool	AlphaTest;
+};
+layout(set = 0, binding = 1, r16) uniform image2D Shadow;
+layout(set = 0, binding = 2) uniform sampler2D Depth;
+layout(set = 0, binding = 3) uniform sampler2D Normal;
+layout(set = 0, binding = 4) uniform sampler2D BlueNoise;
+layout(set = 0, binding = 5) uniform accelerationStructureNV AccelerationStructure;
+
+layout(location = 0) rayPayloadNV bool Payload;
+
+vec3 Perpendicular(vec3 v)
+{
+	vec3 a = abs(v);
+	uint x = ((a.x - a.y) < 0.0 && (a.x - a.z) < 0.0) ? 1u : 0u;
+	uint y = (a.y - a.z) < 0.0 ? (1u ^ x) : 0u;
+	uint z = 1u ^ (x | y);
+	return cross(v, vec3(x, y, z));
+}
+
+// http://www.pbr-book.org/3ed-2018/Monte_Carlo_Integration/2D_Sampling_with_Multidimensional_Transformations.html#UniformSampleCone
+vec3 UniformSampleCone(vec2 u, float cos_angle, vec3 z)
+{
+	float cos_theta = mix(cos_angle, 1.0, u.x);
+	float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+	float phi = u.y * 2.0 * PI;
+	vec3 x = normalize(Perpendicular(z));
+	vec3 y = normalize(cross(x, z));
+	return normalize(cos(phi) * sin_theta * x + sin(phi) * sin_theta * y + cos_theta * z);
+}
+
+void main()
+{
+	float depth = texelFetch(Depth, ivec2(gl_LaunchIDNV.xy), 0).r;
+
+	float shadow = 1.0;
+	if (depth > 1e-6)
+	{
+		vec2 tex_coord = (vec2(gl_LaunchIDNV.xy) + 0.5) / vec2(gl_LaunchSizeNV.xy);
+		vec4 world_pos = InvViewProjZeroTranslation * vec4(tex_coord * 2.0 - 1.0, depth, 1.0);
+		world_pos.xyz /= world_pos.w;
+		world_pos.xyz += ViewPosition;
+
+		vec3 normal = normalize(texelFetch(Normal, ivec2(gl_LaunchIDNV.xy), 0).rgb * 2.0 - 1.0);
+		world_pos.xyz += normal * 2e-2;
+
+		vec2 rand = texelFetch(BlueNoise, ivec2(gl_LaunchIDNV.xy & 127u), 0).rg;
+		vec3 light_dir = UniformSampleCone(rand.xy, CosAngle, LightDirection);
+
+		Payload = false;
+		traceNV(AccelerationStructure, gl_RayFlagsTerminateOnFirstHitNV | gl_RayFlagsSkipClosestHitShaderNV | (AlphaTest ? 0 : gl_RayFlagsCullNoOpaqueNV), 0xff, 0, 0, 0, world_pos.xyz, 1e-3, light_dir, 1e3, 0);
+		shadow = Payload ? 1.0 : 0.0;
+	}
+	imageStore(Shadow, ivec2(gl_LaunchIDNV.xy), vec4(shadow, 0.0, 0.0, 0.0));
+}
