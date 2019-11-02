@@ -98,10 +98,6 @@ int main(int argc, char* argv[])
 	GatherShaderFiles(in_dir, out_dir, "", &item, shader_files);
 
 	std::stringstream new_file_content;
-	for (const ShaderFile& file : shader_files)
-	{
-		new_file_content << file.Path << " " << file.Hash << std::endl;
-	}
 
 	std::string file_list_path = out_dir + "ShaderFileList.txt";
 	std::ifstream old_file(file_list_path);
@@ -116,7 +112,10 @@ int main(int argc, char* argv[])
 				if (it->Path == path)
 				{
 					if (it->Hash == hash)
+					{
+						new_file_content << it->Path << " " << it->Hash << std::endl;
 						shader_files.erase(it);
+					}
 					break;
 				}
 			}
@@ -125,10 +124,19 @@ int main(int argc, char* argv[])
 		old_file.close();
 	}
 
+	bool any_compile_errors = false;
 	for (const ShaderFile& file : shader_files)
 	{
 		std::string command = "%VULKAN_SDK%/Bin/glslangValidator.exe -V -o " + out_dir + file.Path + " " + in_dir + file.Path + " --target-env vulkan1.1";
-		system(command.c_str());
+		int status = system(command.c_str());
+		if (status == 0)
+		{
+			new_file_content << file.Path << " " << file.Hash << std::endl;
+		}
+		else
+		{
+			any_compile_errors = true;
+		}
 	}
 
 	std::ofstream new_file(file_list_path);
@@ -138,5 +146,5 @@ int main(int argc, char* argv[])
 		new_file.close();
 	}
 
-    return 0;
+    return any_compile_errors ? 1 : 0;
 }

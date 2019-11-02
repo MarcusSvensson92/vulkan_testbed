@@ -83,7 +83,7 @@ if(WIN32)
 	
 	# Add shader compilation post build step
     add_custom_target(ShaderTarget ALL DEPENDS shader_compilation)
-    add_custom_command(OUTPUT shader_compilation COMMAND cmd /c ${CMAKE_CURRENT_SOURCE_DIR}/compile_shaders.bat DEPENDS always_rebuild)
+    add_custom_command(OUTPUT shader_compilation COMMAND cmd /c ${CMAKE_CURRENT_SOURCE_DIR}/Tools/ShaderCompiler/ShaderCompiler.exe ${CMAKE_CURRENT_SOURCE_DIR}/Source/Shaders/ ${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/ DEPENDS always_rebuild)
     add_custom_command(OUTPUT always_rebuild COMMAND cmake -E echo)
 else()
     message(FATAL_ERROR "Unsupported platform!")
@@ -97,6 +97,9 @@ target_link_libraries(${PROJECT_NAME} glfw imgui volk)
 
 # Create output directory
 execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/Bin")
+
+# Create shader output directory
+execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders")
 
 # Set working directory for Visual Studio
 set_target_properties(${PROJECT_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Bin")
