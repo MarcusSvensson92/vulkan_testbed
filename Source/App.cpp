@@ -3,6 +3,8 @@
 
 #ifdef _WIN32
 	#define GLFW_EXPOSE_NATIVE_WIN32
+#else
+	#define GLFW_EXPOSE_NATIVE_X11
 #endif
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
@@ -36,6 +38,10 @@ void App::Initialize(uint32_t width, uint32_t height, const char* title)
 	VkInitializeParams vk_params;
 #ifdef _WIN32
 	vk_params.WindowHandle = glfwGetWin32Window(m_Window);
+	vk_params.DisplayHandle = GetModuleHandle(NULL);
+#else
+	vk_params.WindowHandle = reinterpret_cast<void*>(glfwGetX11Window(m_Window));
+	vk_params.DisplayHandle = glfwGetX11Display();
 #endif
 	vk_params.BackBufferWidth = width;
 	vk_params.BackBufferHeight = height;

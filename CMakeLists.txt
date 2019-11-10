@@ -41,6 +41,7 @@ if(GIT_FOUND)
 endif()
 
 # Add Vulkan SDK
+include_directories("$ENV{VULKAN_SDK}/include/")
 include_directories("$ENV{VULKAN_SDK}/Include/")
 
 # Add cgltf
@@ -78,16 +79,26 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/Tools/ShaderCompiler")
 
 # Add shader compilation build step
 add_custom_target(ShaderTarget ALL DEPENDS shader_compilation)
-add_custom_command(OUTPUT shader_compilation COMMAND cmd /c ${CMAKE_CURRENT_SOURCE_DIR}/Tools/ShaderCompiler/Bin/ShaderCompiler ${CMAKE_CURRENT_SOURCE_DIR}/Source/Shaders/ ${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/ DEPENDS ShaderCompiler always_rebuild)
+add_custom_command(OUTPUT shader_compilation COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/Tools/ShaderCompiler/Bin/ShaderCompiler ${CMAKE_CURRENT_SOURCE_DIR}/Source/Shaders/ ${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders/ DEPENDS ShaderCompiler always_rebuild)
 add_custom_command(OUTPUT always_rebuild COMMAND cmake -E echo)
 
+# Create output directory
+execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/Bin")
+
+# Create shader output directory
+execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders")
+
 # Set output directory
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Bin")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/Bin")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/Bin")
 
 if(WIN32)
     # Add defines
     add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -D_CRT_SECURE_NO_WARNINGS)
+elseif(UNIX)
+    # Add defines
+    add_definitions(-DVK_USE_PLATFORM_XLIB_KHR)
 else()
     message(FATAL_ERROR "Unsupported platform!")
 endif()
@@ -97,12 +108,6 @@ add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME} glfw imgui volk)
-
-# Create output directory
-execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/Bin")
-
-# Create shader output directory
-execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/Assets/Shaders")
 
 # Set working directory for Visual Studio
 set_target_properties(${PROJECT_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Bin")

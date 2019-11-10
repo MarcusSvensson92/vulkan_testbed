@@ -83,7 +83,8 @@ extern _Vk													Vk;
 
 struct VkInitializeParams
 {
-	void*													WindowHandle; // Platform specific
+	void*													WindowHandle;	// Platform specific
+	void*													DisplayHandle;	// Platform specific
 	uint32_t												BackBufferWidth;
 	uint32_t												BackBufferHeight;
 	uint32_t												DesiredBackBufferCount;

@@ -211,7 +211,10 @@ void RenderRayTracedShadows::Create(const RenderContext& rc, uint32_t model_coun
 		buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 		VK(vkCreateBuffer(Vk.Device, &buffer_create_info, NULL, &m_ScratchBuffer));
-		vkGetBufferMemoryRequirements(Vk.Device, m_ScratchBuffer, &VkMemoryRequirements());
+
+		VkMemoryRequirements dummy_memory_requirements;
+		vkGetBufferMemoryRequirements(Vk.Device, m_ScratchBuffer, &dummy_memory_requirements);
+
 		VK(vmaBindBufferMemory(Vk.Allocator, m_ScratchBufferAllocation, m_ScratchBuffer));
 	}
 

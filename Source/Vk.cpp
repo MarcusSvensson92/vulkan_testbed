@@ -209,6 +209,8 @@ void VkInitialize(const VkInitializeParams& params)
 		VK_KHR_SURFACE_EXTENSION_NAME,
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
 		VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+#elif defined(VK_USE_PLATFORM_XLIB_KHR)
+		VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
 #endif
 		VK_EXT_DEBUG_REPORT_EXTENSION_NAME,
 	};
@@ -293,9 +295,15 @@ void VkInitialize(const VkInitializeParams& params)
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
 	VkWin32SurfaceCreateInfoKHR surface_info = {};
 	surface_info.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-	surface_info.hinstance = GetModuleHandle(NULL);
 	surface_info.hwnd = static_cast<HWND>(params.WindowHandle);
+	surface_info.hinstance = static_cast<HINSTANCE>(params.DisplayHandle);
 	VK(vkCreateWin32SurfaceKHR(Vk.Instance, &surface_info, NULL, &Vk.Surface));
+#elif defined(VK_USE_PLATFORM_XLIB_KHR)
+	VkXlibSurfaceCreateInfoKHR surface_info = {};
+	surface_info.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+	surface_info.window = reinterpret_cast<Window>(params.WindowHandle);
+	surface_info.dpy = static_cast<Display*>(params.DisplayHandle);
+	VK(vkCreateXlibSurfaceKHR(Vk.Instance, &surface_info, NULL, &Vk.Surface));
 #endif
 
 	uint32_t physical_device_count = 0;

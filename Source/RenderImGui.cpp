@@ -1,6 +1,11 @@
 #include "RenderImGui.h"
 #include "VkUtil.h"
 
+#ifdef _WIN32
+	#define GLFW_EXPOSE_NATIVE_WIN32
+#endif
+#include <GLFW/glfw3native.h>
+
 static const char* RenderImGuiGetClipboardText(void* user_data)
 {
     return glfwGetClipboardString(static_cast<GLFWwindow*>(user_data));
