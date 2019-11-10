@@ -17,8 +17,8 @@ A pet project for experimenting with various graphics techniques in Vulkan.
 1. Install [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) and [CMake](https://cmake.org/).
 2. Generate project files using one of the pre-existing bat files in the top directory or using CMake manually.
 3. Open *VulkanTestbed.sln*.
-4. Set *VulkanTestbed* as StartUp Project.
-5. Build the solution.
+4. Build the solution.
+5. Set *VulkanTestbed* as StartUp Project.
 
 ### Unix Makefiles
 1. Install [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/) and [CMake](https://cmake.org/).
