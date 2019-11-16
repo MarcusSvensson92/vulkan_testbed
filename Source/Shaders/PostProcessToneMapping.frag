@@ -9,24 +9,26 @@ layout(binding = 0) uniform Constants
 };
 layout(binding = 1) uniform sampler2D HdrTexture;
 
-vec3 Filmic(vec3 x)
+// https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+vec3 ACES(vec3 x)
 {
-	const float a = 0.15;
-	const float b = 0.50;
-	const float c = 0.10;
-	const float d = 0.20;
-	const float e = 0.02;
-	const float f = 0.30;
-	return ((x * (a * x + c * b) + d * e) / (x * (a * x + b) + d * f)) - e / f;
+    float a = 2.51;
+    float b = 0.03;
+    float c = 2.43;
+    float d = 0.59;
+    float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
 
 void main()
 {
     OutColor.rgb = texelFetch(HdrTexture, ivec2(gl_FragCoord.xy), 0).rgb;
 
-	// Filmic tonemapping
-	const float linear_white = 11.2;
-	OutColor.rgb = Filmic(OutColor.rgb * Exposure) / Filmic(vec3(linear_white));
+	// Exposure
+	OutColor.rgb *= Exposure;
+
+	// ACES tone mapping
+	OutColor.rgb = ACES(OutColor.rgb * 0.8);
 
 	// Gamma 2.2
 	OutColor.rgb = pow(OutColor.rgb, vec3(1.0 / 2.2));
