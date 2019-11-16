@@ -388,7 +388,9 @@ void App::Run()
 			vkDeviceWaitIdle(Vk.Device);
 
 #ifdef _WIN32
-			system("cd .. && compile_shaders.bat");
+			system("\"\"../Tools/ShaderCompiler/Bin/ShaderCompiler.exe\"\" ../Source/Shaders/ ../Assets/Shaders/");
+#else
+			system("../Tools/ShaderCompiler/Bin/ShaderCompiler ../Source/Shaders/ ../Assets/Shaders/");
 #endif
 
 			m_RenderModel.RecreatePipelines(m_RenderContext);
