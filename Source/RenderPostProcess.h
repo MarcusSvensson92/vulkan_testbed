@@ -24,7 +24,7 @@ public:
 	bool					m_TemporalAAEnable						= true;
 	VkTexture               m_TemporalTextures[2]					= {};
 
-    float                   m_Exposure                              = 12.0f;
+    float                   m_Exposure                              = 32.0f;
 
     void                    Create(const RenderContext& rc);
     void                    Destroy();

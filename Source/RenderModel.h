@@ -14,8 +14,8 @@ public:
 	VkImageView				m_AmbientLightLUT			= VK_NULL_HANDLE;
 	VkImageView				m_DirectionalLightLUT		= VK_NULL_HANDLE;
 
-	float                   m_AmbientLightIntensity		= 0.8f;
-	float                   m_DirectionalLightIntensity = 0.8f;
+	float                   m_AmbientLightIntensity		= 1.0f;
+	float                   m_DirectionalLightIntensity = 1.0f;
 
     void                    Create(const RenderContext& rc);
     void                    Destroy();
