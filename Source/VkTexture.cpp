@@ -3,8 +3,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-#include <algorithm>
-
 static VkImageAspectFlags ToVkImageAspectMask(VkFormat format)
 {
     switch (format)
@@ -54,7 +52,7 @@ VkTexture VkTextureCreate(const VkTextureCreateParams& params)
     image_info.extent.width = params.Width;
     image_info.extent.height = params.Height;
     image_info.extent.depth = params.Depth;
-    image_info.mipLevels = params.GenerateMipmaps ? static_cast<uint32_t>(log(static_cast<double>(std::max(params.Width, params.Height))) / log(2)) + 1 : 1;
+    image_info.mipLevels = params.GenerateMipmaps ? static_cast<uint32_t>(log(static_cast<double>(VkMax(params.Width, params.Height))) / log(2)) + 1 : 1;
     image_info.arrayLayers = 1;
     image_info.format = params.Format;
     image_info.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -144,8 +142,8 @@ VkTexture VkTextureCreate(const VkTextureCreateParams& params)
                         VkImageBlit region = {};
                         region.srcOffsets[1].x = mip_width;
                         region.srcOffsets[1].y = mip_height;
-                        region.dstOffsets[1].x = std::max(mip_width >> 1U, 1U);
-                        region.dstOffsets[1].y = std::max(mip_height >> 1U, 1U);
+                        region.dstOffsets[1].x = VkMax(mip_width >> 1U, 1U);
+                        region.dstOffsets[1].y = VkMax(mip_height >> 1U, 1U);
                         region.srcOffsets[1].z = region.dstOffsets[1].z = 1;
                         region.srcSubresource.mipLevel = mip - 1;
                         region.dstSubresource.mipLevel = mip;
@@ -160,8 +158,8 @@ VkTexture VkTextureCreate(const VkTextureCreateParams& params)
                         barrier.dstAccessMask = access_mask;
                         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, stage_mask, 0, 0, NULL, 0, NULL, 1, &barrier);
 
-                        mip_width = std::max(mip_width >> 1U, 1U);
-                        mip_height = std::max(mip_height >> 1U, 1U);
+                        mip_width = VkMax(mip_width >> 1U, 1U);
+                        mip_height = VkMax(mip_height >> 1U, 1U);
                     }
 
                     barrier.subresourceRange.baseMipLevel = image_info.mipLevels - 1;

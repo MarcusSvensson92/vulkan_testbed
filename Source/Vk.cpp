@@ -33,9 +33,9 @@ static void CreateSwapchain(uint32_t width, uint32_t height, uint32_t image_coun
 {
     VkSurfaceCapabilitiesKHR surface_capabilities = {};
     VK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(Vk.PhysicalDevice, Vk.Surface, &surface_capabilities));
-    Vk.SwapchainImageExtent.width = std::min(std::max(width, surface_capabilities.minImageExtent.width), surface_capabilities.maxImageExtent.width);
-    Vk.SwapchainImageExtent.height = std::min(std::max(height, surface_capabilities.minImageExtent.height), surface_capabilities.maxImageExtent.height);
-    Vk.SwapchainImageCount = surface_capabilities.maxImageCount == 0 ? std::max(image_count, surface_capabilities.minImageCount) : std::min(std::max(image_count, surface_capabilities.minImageCount), surface_capabilities.maxImageCount);
+    Vk.SwapchainImageExtent.width = VkMin(VkMax(width, surface_capabilities.minImageExtent.width), surface_capabilities.maxImageExtent.width);
+    Vk.SwapchainImageExtent.height = VkMin(VkMax(height, surface_capabilities.minImageExtent.height), surface_capabilities.maxImageExtent.height);
+    Vk.SwapchainImageCount = surface_capabilities.maxImageCount == 0 ? VkMax(image_count, surface_capabilities.minImageCount) : VkMin(VkMax(image_count, surface_capabilities.minImageCount), surface_capabilities.maxImageCount);
 
     uint32_t surface_format_count = 0;
     VK(vkGetPhysicalDeviceSurfaceFormatsKHR(Vk.PhysicalDevice, Vk.Surface, &surface_format_count, NULL));

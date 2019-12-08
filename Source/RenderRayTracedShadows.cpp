@@ -3,337 +3,12 @@
 
 #include <algorithm>
 
-static void AddBottomLevelAccelerationStructure(std::vector<BottomLevelAccelerationStructure>& acceleration_structures, const std::vector<VkGeometryNV>& geometries, const glm::mat4& transform, uint32_t instance_index = 0xffffffffu)
-{
-	BottomLevelAccelerationStructure acceleration_structure;
-	acceleration_structure.Geometries = std::move(geometries);
-	acceleration_structure.Transform = transform;
-	acceleration_structure.InstanceIndex = instance_index;
-
-	VkAccelerationStructureCreateInfoNV acceleration_structure_info = {};
-	acceleration_structure_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
-	acceleration_structure_info.info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-	acceleration_structure_info.info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
-	acceleration_structure_info.info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV;
-	acceleration_structure_info.info.geometryCount = static_cast<uint32_t>(acceleration_structure.Geometries.size());
-	acceleration_structure_info.info.pGeometries = acceleration_structure.Geometries.data();
-	VK(vkCreateAccelerationStructureNV(Vk.Device, &acceleration_structure_info, NULL, &acceleration_structure.AccelerationStructure));
-
-	VkAccelerationStructureMemoryRequirementsInfoNV acceleration_structure_memory_requirements_info = {};
-	acceleration_structure_memory_requirements_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
-	acceleration_structure_memory_requirements_info.accelerationStructure = acceleration_structure.AccelerationStructure;
-
-	VkMemoryRequirements2 acceleration_structure_memory_requirements = {};
-	acceleration_structure_memory_requirements.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
-	vkGetAccelerationStructureMemoryRequirementsNV(Vk.Device, &acceleration_structure_memory_requirements_info, &acceleration_structure_memory_requirements);
-	acceleration_structure.MemoryRequirements = acceleration_structure_memory_requirements.memoryRequirements;
-
-	VmaAllocationCreateInfo acceleration_structure_allocation_create_info = {};
-	acceleration_structure_allocation_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-	VmaAllocationInfo acceleration_structure_allocation_info;
-	VK(vmaAllocateMemory(Vk.Allocator, &acceleration_structure.MemoryRequirements, &acceleration_structure_allocation_create_info, &acceleration_structure.Allocation, &acceleration_structure_allocation_info));
-
-	VkBindAccelerationStructureMemoryInfoNV acceleration_structure_memory_info = {};
-	acceleration_structure_memory_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
-	acceleration_structure_memory_info.accelerationStructure = acceleration_structure.AccelerationStructure;
-	acceleration_structure_memory_info.memory = acceleration_structure_allocation_info.deviceMemory;
-	acceleration_structure_memory_info.memoryOffset = acceleration_structure_allocation_info.offset;
-	VK(vkBindAccelerationStructureMemoryNV(Vk.Device, 1, &acceleration_structure_memory_info));
-
-	VK(vkGetAccelerationStructureHandleNV(Vk.Device, acceleration_structure.AccelerationStructure, sizeof(uint64_t), &acceleration_structure.Handle));
-
-	acceleration_structures.emplace_back(acceleration_structure);
-}
-
-void RenderRayTracedShadows::Create(const RenderContext& rc, uint32_t model_count, const GltfModel* models)
+void RenderRayTracedShadows::Create(const RenderContext& rc)
 {
     if (!Vk.IsRayTracingSupported)
     {
         return;
     }
-
-	struct TransparentInstance
-	{
-		uint32_t MeshIndex;
-		uint32_t TextureIndex;
-		uint32_t IndexOffset;
-		uint32_t VertexOffset;
-	};
-	std::vector<TransparentInstance> transparent_instances;
-
-	for (uint32_t i = 0; i < model_count; ++i)
-	{
-		const GltfModel& model = models[i];
-
-		std::vector<uint32_t> base_color_textures;
-		bool any_transparent = false;
-
-		const uint32_t instance_count = static_cast<uint32_t>(model.m_Instances.size());
-		for (uint32_t j = 0; j < instance_count; ++j)
-		{
-			const GltfInstance& instance = model.m_Instances[j];
-
-			std::vector<VkGeometryNV> opaque_geometries;
-
-			for (uint32_t k = instance.MeshOffset; k < (instance.MeshOffset + instance.MeshCount); ++k)
-			{
-				const GltfMesh& mesh = model.m_Meshes[k];
-				const GltfMaterial& material = model.m_Materials[mesh.MaterialIndex];
-
-				VkGeometryNV geometry = {};
-				geometry.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
-				geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_NV;
-				geometry.geometry.aabbs.sType = VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV;
-				geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
-				geometry.geometry.triangles.vertexData = model.m_VertexBuffer;
-				geometry.geometry.triangles.vertexOffset = model.m_VertexBufferOffsets[VERTEX_ATTRIBUTE_POSITION] + static_cast<VkDeviceSize>(mesh.VertexOffset) * sizeof(glm::vec3);
-				geometry.geometry.triangles.vertexCount = mesh.VertexCount;
-				geometry.geometry.triangles.vertexStride = sizeof(glm::vec3);
-				geometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-				geometry.geometry.triangles.indexData = model.m_IndexBuffer;
-				geometry.geometry.triangles.indexOffset = static_cast<VkDeviceSize>(mesh.IndexOffset) * sizeof(uint16_t);
-				geometry.geometry.triangles.indexCount = mesh.IndexCount;
-				geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT16;
-				geometry.flags = material.IsOpaque ? VK_GEOMETRY_OPAQUE_BIT_NV : 0;
-
-				if (material.IsOpaque)
-				{
-					opaque_geometries.emplace_back(geometry);
-				}
-				else
-				{
-					if (!material.HasBaseColorTexture)
-					{
-						continue;
-					}
-
-					AddBottomLevelAccelerationStructure(m_BottomLevelAccelerationStructures, { geometry }, instance.Transform, static_cast<uint32_t>(transparent_instances.size()));
-					
-					uint32_t texture_index = 0;
-					const uint32_t base_color_texture_count = static_cast<uint32_t>(base_color_textures.size());
-					for (; texture_index < base_color_texture_count; ++texture_index)
-					{
-						if (base_color_textures[texture_index] == material.BaseColorTextureIndex)
-						{
-							break;
-						}
-					}
-					if (texture_index == base_color_texture_count)
-					{
-						base_color_textures.push_back(material.BaseColorTextureIndex);
-					}
-
-					TransparentInstance transparent_instance;
-					transparent_instance.MeshIndex = static_cast<uint32_t>(m_IndexBufferInfo.size());
-					transparent_instance.TextureIndex = static_cast<uint32_t>(m_BaseColorImageInfo.size()) + texture_index;
-					transparent_instance.IndexOffset = mesh.IndexOffset;
-					transparent_instance.VertexOffset = mesh.VertexOffset;
-					transparent_instances.emplace_back(transparent_instance);
-
-					any_transparent = true;
-				}
-			}
-
-			if (!opaque_geometries.empty())
-			{
-				AddBottomLevelAccelerationStructure(m_BottomLevelAccelerationStructures, opaque_geometries, instance.Transform);
-			}
-		}
-
-		if (any_transparent)
-		{
-			m_IndexBufferInfo.push_back({ model.m_IndexBuffer, 0, VK_WHOLE_SIZE });
-			m_VertexBufferInfo.push_back({ model.m_VertexBuffer, model.m_VertexBufferOffsets[VERTEX_ATTRIBUTE_TEXCOORD], model.m_VertexBufferOffsets[VERTEX_ATTRIBUTE_TEXCOORD + 1] - model.m_VertexBufferOffsets[VERTEX_ATTRIBUTE_TEXCOORD] });
-
-			for (uint32_t base_color_texture_index : base_color_textures)
-			{
-				VkTexture base_color_texture = model.m_Textures[base_color_texture_index];
-				m_BaseColorImageInfo.push_back({ rc.LinearWrap, base_color_texture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL });
-			}
-		}
-	}
-
-	// Top level acceleration structure
-	{
-		VkAccelerationStructureCreateInfoNV acceleration_structure_info = {};
-		acceleration_structure_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
-		acceleration_structure_info.info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-		acceleration_structure_info.info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;
-		acceleration_structure_info.info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV;
-		acceleration_structure_info.info.instanceCount = static_cast<uint32_t>(m_BottomLevelAccelerationStructures.size());
-		VK(vkCreateAccelerationStructureNV(Vk.Device, &acceleration_structure_info, NULL, &m_TopLevelAccelerationStructure));
-
-		VkAccelerationStructureMemoryRequirementsInfoNV acceleration_structure_memory_requirements_info = {};
-		acceleration_structure_memory_requirements_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
-		acceleration_structure_memory_requirements_info.accelerationStructure = m_TopLevelAccelerationStructure;
-
-		VkMemoryRequirements2 acceleration_structure_memory_requirements = {};
-		acceleration_structure_memory_requirements.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
-		vkGetAccelerationStructureMemoryRequirementsNV(Vk.Device, &acceleration_structure_memory_requirements_info, &acceleration_structure_memory_requirements);
-		m_TopLevelAccelerationStructureMemoryRequirements = acceleration_structure_memory_requirements.memoryRequirements;
-
-		VmaAllocationCreateInfo acceleration_structure_allocation_create_info = {};
-		acceleration_structure_allocation_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-		VmaAllocationInfo acceleration_structure_allocation_info;
-		VK(vmaAllocateMemory(Vk.Allocator, &m_TopLevelAccelerationStructureMemoryRequirements, &acceleration_structure_allocation_create_info, &m_TopLevelAccelerationStructureAllocation, &acceleration_structure_allocation_info));
-
-		VkBindAccelerationStructureMemoryInfoNV acceleration_structure_memory_info = {};
-		acceleration_structure_memory_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
-		acceleration_structure_memory_info.accelerationStructure = m_TopLevelAccelerationStructure;
-		acceleration_structure_memory_info.memory = acceleration_structure_allocation_info.deviceMemory;
-		acceleration_structure_memory_info.memoryOffset = acceleration_structure_allocation_info.offset;
-		VK(vkBindAccelerationStructureMemoryNV(Vk.Device, 1, &acceleration_structure_memory_info));
-	}
-
-	// Scratch buffer
-	{
-		VkDeviceSize scratch_buffer_size = m_TopLevelAccelerationStructureMemoryRequirements.size;
-		for (const BottomLevelAccelerationStructure& acceleration_structure : m_BottomLevelAccelerationStructures)
-		{
-			scratch_buffer_size = std::max(scratch_buffer_size, acceleration_structure.MemoryRequirements.size);
-		}
-
-		VkMemoryRequirements memory_requirements;
-		memory_requirements.size = scratch_buffer_size;
-		memory_requirements.alignment = m_TopLevelAccelerationStructureMemoryRequirements.alignment;
-		memory_requirements.memoryTypeBits = m_TopLevelAccelerationStructureMemoryRequirements.memoryTypeBits;
-
-		VmaAllocationCreateInfo allocation_create_info = {};
-		allocation_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-		VK(vmaAllocateMemory(Vk.Allocator, &memory_requirements, &allocation_create_info, &m_ScratchBufferAllocation, NULL));
-
-		VkBufferCreateInfo buffer_create_info = {};
-		buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		buffer_create_info.size = scratch_buffer_size;
-		buffer_create_info.usage = VK_BUFFER_USAGE_RAY_TRACING_BIT_NV;
-		buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-		VK(vkCreateBuffer(Vk.Device, &buffer_create_info, NULL, &m_ScratchBuffer));
-
-		VkMemoryRequirements dummy_memory_requirements;
-		vkGetBufferMemoryRequirements(Vk.Device, m_ScratchBuffer, &dummy_memory_requirements);
-
-		VK(vmaBindBufferMemory(Vk.Allocator, m_ScratchBufferAllocation, m_ScratchBuffer));
-	}
-
-	// Geometry instance buffer
-	{
-		VkBufferCreateInfo buffer_create_info = {};
-		buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		buffer_create_info.size = sizeof(VkGeometryInstanceNV) * m_BottomLevelAccelerationStructures.size();
-		buffer_create_info.usage = VK_BUFFER_USAGE_RAY_TRACING_BIT_NV;
-		buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-		VmaAllocationCreateInfo allocation_create_info = {};
-		allocation_create_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-		allocation_create_info.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-
-		VmaAllocationInfo allocation_info;
-		VK(vmaCreateBuffer(Vk.Allocator, &buffer_create_info, &allocation_create_info, &m_GeometryInstanceBuffer, &m_GeometryInstanceBufferAllocation, &allocation_info));
-		m_GeometryInstanceBufferMappedData = static_cast<VkGeometryInstanceNV*>(allocation_info.pMappedData);
-
-		for (size_t i = 0; i < m_BottomLevelAccelerationStructures.size(); ++i)
-		{
-			VkGeometryInstanceNV& instance = m_GeometryInstanceBufferMappedData[i];
-			instance.transform[0] = m_BottomLevelAccelerationStructures[i].Transform[0][0]; instance.transform[1] = m_BottomLevelAccelerationStructures[i].Transform[1][0]; instance.transform[2]  = m_BottomLevelAccelerationStructures[i].Transform[2][0]; instance.transform[3]  = m_BottomLevelAccelerationStructures[i].Transform[3][0];
-			instance.transform[4] = m_BottomLevelAccelerationStructures[i].Transform[0][1]; instance.transform[5] = m_BottomLevelAccelerationStructures[i].Transform[1][1]; instance.transform[6]  = m_BottomLevelAccelerationStructures[i].Transform[2][1]; instance.transform[7]  = m_BottomLevelAccelerationStructures[i].Transform[3][1];
-			instance.transform[8] = m_BottomLevelAccelerationStructures[i].Transform[0][2]; instance.transform[9] = m_BottomLevelAccelerationStructures[i].Transform[1][2]; instance.transform[10] = m_BottomLevelAccelerationStructures[i].Transform[2][2]; instance.transform[12] = m_BottomLevelAccelerationStructures[i].Transform[3][2];
-			instance.instanceCustomIndex = m_BottomLevelAccelerationStructures[i].InstanceIndex;
-			instance.mask = 0xff;
-			instance.instanceOffset = 0;
-			instance.flags = 0;
-			instance.accelerationStructureHandle = m_BottomLevelAccelerationStructures[i].Handle;
-		}
-	}
-
-	// Transparent instance buffer
-	{
-		VkBufferCreateInfo buffer_create_info = {};
-		buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		buffer_create_info.size = sizeof(TransparentInstance) * transparent_instances.size();
-		buffer_create_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-		buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-		VmaAllocationCreateInfo allocation_create_info = {};
-		allocation_create_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
-		allocation_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-		VK(vmaCreateBuffer(Vk.Allocator, &buffer_create_info, &allocation_create_info, &m_TransparentInstanceBuffer, &m_TransparentInstanceBufferAllocation, NULL));
-
-		VkAllocation buffer_allocation = VkAllocateUploadBuffer(buffer_create_info.size);
-		memcpy(buffer_allocation.Data, transparent_instances.data(), buffer_create_info.size);
-
-		VkRecordCommands(
-			[=](VkCommandBuffer cmd)
-			{
-				VkBufferMemoryBarrier pre_transfer_barrier = {};
-				pre_transfer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-				pre_transfer_barrier.srcAccessMask = 0;
-				pre_transfer_barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-				pre_transfer_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-				pre_transfer_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-				pre_transfer_barrier.buffer = m_TransparentInstanceBuffer;
-				pre_transfer_barrier.offset = 0;
-				pre_transfer_barrier.size = buffer_create_info.size;
-				vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 1, &pre_transfer_barrier, 0, NULL);
-
-				VkBufferCopy copy_region;
-				copy_region.srcOffset = buffer_allocation.Offset;
-				copy_region.dstOffset = 0;
-				copy_region.size = buffer_create_info.size;
-				vkCmdCopyBuffer(cmd, buffer_allocation.Buffer, m_TransparentInstanceBuffer, 1, &copy_region);
-
-				VkBufferMemoryBarrier post_transfer_barrier = {};
-				post_transfer_barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-				post_transfer_barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-				post_transfer_barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-				post_transfer_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-				post_transfer_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-				post_transfer_barrier.buffer = m_TransparentInstanceBuffer;
-				post_transfer_barrier.offset = 0;
-				post_transfer_barrier.size = buffer_create_info.size;
-				vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, NULL, 1, &post_transfer_barrier, 0, NULL);
-			});
-	}
-
-	VkRecordCommands(
-		[=](VkCommandBuffer cmd)
-		{
-			// Build bottom level acceleration structures
-			for (const BottomLevelAccelerationStructure& acceleration_structure : m_BottomLevelAccelerationStructures)
-			{
-				VkAccelerationStructureInfoNV acceleration_structure_info = {};
-				acceleration_structure_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-				acceleration_structure_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
-				acceleration_structure_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV;
-				acceleration_structure_info.geometryCount = static_cast<uint32_t>(acceleration_structure.Geometries.size());
-				acceleration_structure_info.pGeometries = acceleration_structure.Geometries.data();
-				vkCmdBuildAccelerationStructureNV(cmd, &acceleration_structure_info, VK_NULL_HANDLE, 0, VK_FALSE, acceleration_structure.AccelerationStructure, VK_NULL_HANDLE, m_ScratchBuffer, 0);
-
-				VkMemoryBarrier barrier = {};
-				barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-				barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV;
-				barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV;
-				vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV | VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0, 1, &barrier, 0, NULL, 0, NULL);
-			}
-
-			// Build top level acceleration structure
-			VkAccelerationStructureInfoNV acceleration_structure_info = {};
-			acceleration_structure_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-			acceleration_structure_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;
-			acceleration_structure_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV;
-			acceleration_structure_info.instanceCount = static_cast<uint32_t>(m_BottomLevelAccelerationStructures.size());
-			vkCmdBuildAccelerationStructureNV(cmd, &acceleration_structure_info, m_GeometryInstanceBuffer, 0, VK_FALSE, m_TopLevelAccelerationStructure, VK_NULL_HANDLE, m_ScratchBuffer, 0);
-
-			VkMemoryBarrier barrier = {};
-			barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-			barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV;
-			barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV;
-			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV | VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0, 1, &barrier, 0, NULL, 0, NULL);
-		});
-
-	CreateResolutionDependentResources(rc);
 
 	// Ray Trace
 	{
@@ -355,9 +30,9 @@ void RenderRayTracedShadows::Create(const RenderContext& rc, uint32_t model_coun
 		VkDescriptorSetLayoutBinding set_layout_bindings_1[] =
 		{
 			{ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ANY_HIT_BIT_NV, NULL },
-			{ 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, static_cast<uint32_t>(m_IndexBufferInfo.size()), VK_SHADER_STAGE_ANY_HIT_BIT_NV, NULL },
-			{ 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, static_cast<uint32_t>(m_VertexBufferInfo.size()), VK_SHADER_STAGE_ANY_HIT_BIT_NV, NULL },
-			{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(m_BaseColorImageInfo.size()), VK_SHADER_STAGE_ANY_HIT_BIT_NV, NULL },
+			{ 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1024, VK_SHADER_STAGE_ANY_HIT_BIT_NV, NULL },
+			{ 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1024, VK_SHADER_STAGE_ANY_HIT_BIT_NV, NULL },
+			{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1024, VK_SHADER_STAGE_ANY_HIT_BIT_NV, NULL },
 		};
 		VkDescriptorSetLayoutCreateInfo set_layout_info_1 = {};
 		set_layout_info_1.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -468,11 +143,11 @@ void RenderRayTracedShadows::Create(const RenderContext& rc, uint32_t model_coun
 	vkGetPhysicalDeviceProperties2(Vk.PhysicalDevice, &physical_device_properties);
 
 	m_ShaderGroupHandleSize = ray_tracing_properties.shaderGroupHandleSize;
-	m_ShaderGroupBaseAlignment = ray_tracing_properties.shaderGroupBaseAlignment;
+	m_ShaderGroupHandleAlignedSize = VkAlignUp(ray_tracing_properties.shaderGroupHandleSize, ray_tracing_properties.shaderGroupBaseAlignment);
 
 	VkBufferCreateInfo buffer_create_info = {};
 	buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer_create_info.size = static_cast<VkDeviceSize>(VkAlignUp(m_ShaderGroupHandleSize, m_ShaderGroupBaseAlignment)) * 3;
+	buffer_create_info.size = static_cast<VkDeviceSize>(m_ShaderGroupHandleAlignedSize) * 3;
 	buffer_create_info.usage = VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -481,6 +156,7 @@ void RenderRayTracedShadows::Create(const RenderContext& rc, uint32_t model_coun
 	VK(vmaCreateBuffer(Vk.Allocator, &buffer_create_info, &buffer_allocation_create_info, &m_ShaderBindingTableBuffer, &m_ShaderBindingTableBufferAllocation, NULL));
 
 	CreatePipelines(rc);
+	CreateResolutionDependentResources(rc);
 }
 
 void RenderRayTracedShadows::Destroy()
@@ -490,28 +166,10 @@ void RenderRayTracedShadows::Destroy()
         return;
     }
 
-	for (const BottomLevelAccelerationStructure& acceleration_structure : m_BottomLevelAccelerationStructures)
-	{
-		vkDestroyAccelerationStructureNV(Vk.Device, acceleration_structure.AccelerationStructure, nullptr);
-		vmaFreeMemory(Vk.Allocator, acceleration_structure.Allocation);
-	}
-
-	vkDestroyAccelerationStructureNV(Vk.Device, m_TopLevelAccelerationStructure, nullptr);
-	vmaFreeMemory(Vk.Allocator, m_TopLevelAccelerationStructureAllocation);
-
-	vkDestroyBuffer(Vk.Device, m_TransparentInstanceBuffer, NULL);
-	vmaFreeMemory(Vk.Allocator, m_TransparentInstanceBufferAllocation);
-
-    vkDestroyBuffer(Vk.Device, m_ScratchBuffer, NULL);
-    vmaFreeMemory(Vk.Allocator, m_ScratchBufferAllocation);
-
-	vmaDestroyBuffer(Vk.Allocator, m_GeometryInstanceBuffer, m_GeometryInstanceBufferAllocation);
-
-	DestroyResolutionDependentResources();
-
 	vmaDestroyBuffer(Vk.Allocator, m_ShaderBindingTableBuffer, m_ShaderBindingTableBufferAllocation);
 
 	DestroyPipelines();
+	DestroyResolutionDependentResources();
 
 	vkDestroyPipelineLayout(Vk.Device, m_RayTracePipelineLayout, NULL);
 	vkDestroyDescriptorSetLayout(Vk.Device, m_RayTraceDescriptorSetLayouts[0], NULL);
@@ -602,12 +260,12 @@ void RenderRayTracedShadows::CreatePipelines(const RenderContext& rc)
 		vkDestroyShaderModule(Vk.Device, rmiss_shader, NULL);
 		vkDestroyShaderModule(Vk.Device, rahit_shader, NULL);
 
-		VkDeviceSize buffer_size = static_cast<VkDeviceSize>(VkAlignUp(m_ShaderGroupHandleSize, m_ShaderGroupBaseAlignment)) * 3;
+		VkDeviceSize buffer_size = static_cast<VkDeviceSize>(m_ShaderGroupHandleAlignedSize) * 3;
 		VkAllocation buffer_allocation = VkAllocateUploadBuffer(buffer_size);
 
-		vkGetRayTracingShaderGroupHandlesNV(Vk.Device, m_RayTracePipeline, 0, 1, m_ShaderGroupHandleSize, buffer_allocation.Data + 0 * VkAlignUp(m_ShaderGroupHandleSize, m_ShaderGroupBaseAlignment));
-		vkGetRayTracingShaderGroupHandlesNV(Vk.Device, m_RayTracePipeline, 1, 1, m_ShaderGroupHandleSize, buffer_allocation.Data + 1 * VkAlignUp(m_ShaderGroupHandleSize, m_ShaderGroupBaseAlignment));
-		vkGetRayTracingShaderGroupHandlesNV(Vk.Device, m_RayTracePipeline, 2, 1, m_ShaderGroupHandleSize, buffer_allocation.Data + 2 * VkAlignUp(m_ShaderGroupHandleSize, m_ShaderGroupBaseAlignment));
+		vkGetRayTracingShaderGroupHandlesNV(Vk.Device, m_RayTracePipeline, 0, 1, m_ShaderGroupHandleSize, buffer_allocation.Data + 0 * m_ShaderGroupHandleAlignedSize);
+		vkGetRayTracingShaderGroupHandlesNV(Vk.Device, m_RayTracePipeline, 1, 1, m_ShaderGroupHandleSize, buffer_allocation.Data + 1 * m_ShaderGroupHandleAlignedSize);
+		vkGetRayTracingShaderGroupHandlesNV(Vk.Device, m_RayTracePipeline, 2, 1, m_ShaderGroupHandleSize, buffer_allocation.Data + 2 * m_ShaderGroupHandleAlignedSize);
 
 		VkRecordCommands(
 			[=](VkCommandBuffer cmd)
@@ -739,7 +397,7 @@ void RenderRayTracedShadows::RecreateResolutionDependentResources(const RenderCo
 	CreateResolutionDependentResources(rc);
 }
 
-void RenderRayTracedShadows::RayTrace(const RenderContext& rc, VkCommandBuffer cmd)
+void RenderRayTracedShadows::RayTrace(const RenderContext& rc, VkCommandBuffer cmd, const AccelerationStructure& as)
 {
 	if (!Vk.IsRayTracingSupported)
 	{
@@ -804,19 +462,19 @@ void RenderRayTracedShadows::RayTrace(const RenderContext& rc, VkCommandBuffer c
 				{ 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.DepthTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
 				{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.NormalTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
 				{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.BlueNoiseTextures[m_Reproject ? (rc.FrameCounter % static_cast<uint32_t>(rc.BlueNoiseTextures.size())) : 0].ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestWrap },
-				{ 5, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 0, m_TopLevelAccelerationStructure },
+				{ 5, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 0, as.m_TopLevel.AccelerationStructure },
 			}),
 			VkCreateDescriptorSetForCurrentFrame(m_RayTraceDescriptorSetLayouts[1],
 			{
-				{ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, m_TransparentInstanceBuffer },
-				{ 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, static_cast<uint32_t>(m_IndexBufferInfo.size()), m_IndexBufferInfo.data() },
-				{ 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, static_cast<uint32_t>(m_VertexBufferInfo.size()), m_VertexBufferInfo.data() },
-				{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, static_cast<uint32_t>(m_BaseColorImageInfo.size()), m_BaseColorImageInfo.data() },
+				{ 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, as.m_TransparentInstanceBuffer },
+				{ 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, static_cast<uint32_t>(as.m_IndexBufferInfo.size()), as.m_IndexBufferInfo.data() },
+				{ 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 0, static_cast<uint32_t>(as.m_VertexBufferInfo.size()), as.m_VertexBufferInfo.data() },
+				{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, static_cast<uint32_t>(as.m_BaseColorImageInfo.size()), as.m_BaseColorImageInfo.data() },
 			})
 		};
 		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_NV, m_RayTracePipelineLayout, 0, sizeof(sets) / sizeof(*sets), sets, 0, NULL);
 
-		vkCmdTraceRaysNV(cmd, m_ShaderBindingTableBuffer, 0, m_ShaderBindingTableBuffer, VkAlignUp(m_ShaderGroupHandleSize, m_ShaderGroupBaseAlignment), m_ShaderGroupHandleSize, m_ShaderBindingTableBuffer, 2 * VkAlignUp(m_ShaderGroupHandleSize, m_ShaderGroupBaseAlignment), m_ShaderGroupHandleSize, VK_NULL_HANDLE, 0, 0, rc.Width, rc.Height, 1);
+		vkCmdTraceRaysNV(cmd, m_ShaderBindingTableBuffer, 0, m_ShaderBindingTableBuffer, m_ShaderGroupHandleAlignedSize, m_ShaderGroupHandleSize, m_ShaderBindingTableBuffer, 2 * m_ShaderGroupHandleAlignedSize, m_ShaderGroupHandleSize, VK_NULL_HANDLE, 0, 0, rc.Width, rc.Height, 1);
 
 		VkPopLabel(cmd);
 	}

@@ -165,10 +165,12 @@ void App::Initialize(uint32_t width, uint32_t height, const char* title)
 
 	m_Models[MODEL_SPHERES].Transform(glm::translate(glm::vec3(32.0f, 4.0f, 0.0f)));
 
+	m_AccelerationStructure.Create(m_RenderContext, MODEL_COUNT, m_Models);
+
 	m_RenderModel.Create(m_RenderContext);
 	m_RenderMotion.Create(m_RenderContext);
 	m_RenderSSAO.Create(m_RenderContext);
-	m_RenderShadows.Create(m_RenderContext, MODEL_COUNT, m_Models);
+	m_RenderShadows.Create(m_RenderContext);
 	m_RenderAtmosphere.Create(m_RenderContext);
 	m_RenderPostProcess.Create(m_RenderContext);
 	m_RenderImGui.Create(m_RenderContext, m_Window);
@@ -188,6 +190,8 @@ void App::Terminate()
 	m_RenderAtmosphere.Destroy();
 	m_RenderPostProcess.Destroy();
 	m_RenderImGui.Destroy();
+
+	m_AccelerationStructure.Destroy();
 
 	for (uint32_t i = 0; i < MODEL_COUNT; ++i)
 	{
@@ -511,7 +515,7 @@ void App::Run()
 			m_RenderSSAO.Generate(m_RenderContext, cmd);
 
 			// Ray trace shadows
-			m_RenderShadows.RayTrace(m_RenderContext, cmd);
+			m_RenderShadows.RayTrace(m_RenderContext, cmd, m_AccelerationStructure);
 
 			// Color pass
 			m_RenderModel.DrawColor(m_RenderContext, cmd, MODEL_COUNT, m_Models);

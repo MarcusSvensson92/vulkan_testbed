@@ -18,6 +18,16 @@ inline void VkError(const std::string& message)
 #define VK(func) { VkResult result = func; if (result != VK_SUCCESS) VkError(std::string(#func) + std::string(" returned with erroneous result code ") + std::to_string(static_cast<uint32_t>(result))); }
 
 template<typename T>
+inline T VkMin(T a, T b)
+{
+	return a < b ? a : b;
+}
+template<typename T>
+inline T VkMax(T a, T b)
+{
+	return a > b ? a : b;
+}
+template<typename T>
 inline T VkAlignUp(T value, T alignment)
 {
 	return (value + alignment - 1) / alignment * alignment;

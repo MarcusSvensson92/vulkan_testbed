@@ -12,6 +12,8 @@
 
 #include "GltfModel.h"
 
+#include "AccelerationStructure.h"
+
 struct GLFWwindow;
 
 class App
@@ -39,6 +41,8 @@ public:
 		MODEL_COUNT
 	};
 	GltfModel				m_Models[MODEL_COUNT];
+
+	AccelerationStructure	m_AccelerationStructure;
 
 	void                    Initialize(uint32_t width, uint32_t height, const char* title);
 	void                    Terminate();
