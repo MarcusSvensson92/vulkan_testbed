@@ -14,7 +14,7 @@ layout(binding = 5) uniform sampler2D Temporal;
 
 float LumaWeight(vec3 c)
 {
-	return 1.0 / (dot(c, vec3(0.2126, 0.7152, 0.0722)) + 1.0);
+	return 1.0 / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)) * Exposure);
 }
 
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
@@ -57,7 +57,7 @@ void main()
 		temporal_weight = temporal.a;
 		
 		vec2 velocity = motion * vec2(size);
-		float velocity_weight = clamp(1.0 - length(velocity) / 32.0, 0.0, 1.0); 
+		float velocity_weight = clamp(1.0 - length(velocity) / 64.0, 0.0, 1.0); 
 		temporal_weight *= velocity_weight;
 		
 		// a b c
@@ -80,12 +80,13 @@ void main()
 		// Clip temporal color
 		vec3 m1 = (ca + cb + cc + cd + ce + cf + cg + ch + ci) / 9.0;
 		vec3 m2 = (ca * ca + cb * cb + cc * cc + cd * cd + ce * ce + cf * cf + cg * cg + ch * ch + ci * ci) / 9.0;
-		vec3 extent = sqrt(max(vec3(0.0), m2 - m1 * m1)) * mix(1.5, 3.0, velocity_weight * velocity_weight);
+		vec3 extent = sqrt(max(vec3(0.0), m2 - m1 * m1)) * mix(1.0, 4.0, clamp(-63.0 + 64.0 * temporal_weight, 0.0, 1.0));
 		vec3 displacement = temporal_color - m1;
 		vec3 units = abs(displacement / extent);
-		float max_unit = max(units.x, max(units.y, max(units.z, 1.0)));
+		float max_unit = max(max(units.x, units.y), max(units.z, 1.0));
 		temporal_color = m1 + displacement / max_unit;
 
+		// Blend current and temporal color
 		float w0 = LumaWeight(current_color) * (1.0 - temporal_weight);
 		float w1 = LumaWeight(temporal_color) * temporal_weight;
 		temporal_color = (current_color * w0 + temporal_color * w1) / (w0 + w1);
