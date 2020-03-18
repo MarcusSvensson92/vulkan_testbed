@@ -14,6 +14,16 @@ void main()
 	    return;
 	}
 
-	vec4 color = texelFetch(Temporal, coord, 0);
-	imageStore(OutColor, ivec2(gl_GlobalInvocationID.xy), vec4(color.rgb / max(color.a, 1e-6), 0.0));
+	//   a
+	// b c d
+	//   e
+	vec3 ca = texelFetch(Temporal, coord + ivec2( 0, -1), 0).rgb;
+	vec3 cb = texelFetch(Temporal, coord + ivec2(-1,  0), 0).rgb;
+	vec3 cc = texelFetch(Temporal, coord + ivec2( 0,  0), 0).rgb;
+	vec3 cd = texelFetch(Temporal, coord + ivec2( 1,  0), 0).rgb;
+	vec3 ce = texelFetch(Temporal, coord + ivec2( 0,  1), 0).rgb;
+
+	const float sharpness = 0.2;
+	vec3 color = max(vec3(0.0), cc * (1.0 + sharpness) - (ca + cb + cd + ce) * (0.25 * sharpness));
+	imageStore(OutColor, ivec2(gl_GlobalInvocationID.xy), vec4(color, 0.0));
 }

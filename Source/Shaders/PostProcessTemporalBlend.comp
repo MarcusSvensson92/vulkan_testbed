@@ -17,6 +17,19 @@ float LumaWeight(vec3 c)
 	return 1.0 / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)) * Exposure);
 }
 
+float SpatialWeight(float x)
+{
+    float x2 = x * x;
+    float x3 = x * x * x;
+
+	float y = 0.0;
+    if(x < 1.0)
+        y = 1.5 * x3 - 2.5 * x2 + 1.0;
+    else if (x <= 2.0)
+        y = -0.5 * x3 + 2.5 * x2 - 4.0 * x + 2.0;
+    return y;
+}
+
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 void main()
 {
@@ -52,12 +65,32 @@ void main()
 		vec2 tex_coord = (vec2(gl_GlobalInvocationID.xy) + 0.5) / vec2(size);
 		vec2 prev_tex_coord = tex_coord + motion;
 
-		vec4 temporal = texture(Temporal, prev_tex_coord);
-		temporal_color = temporal.rgb / max(1e-6, temporal.a);
-		temporal_weight = temporal.a;
+		vec2 prev_coord = prev_tex_coord * vec2(size);
+
+		vec3 temporal_color_sum = vec3(0.0, 0.0, 0.0);
+		float temporal_weight_sum = 0.0;
+		for (int y = -1; y <= 1; ++y)
+		{
+			for (int x = -1; x <= 1; ++x)
+			{
+				vec2 sample_coord = floor(prev_coord + vec2(x, y)) + 0.5;
+
+				vec4 sample_color = texelFetch(Temporal, ivec2(sample_coord), 0);
+
+				float weight = sample_color.a;
 		
+				vec2 sample_dist = abs(sample_coord - prev_coord);
+				weight *= SpatialWeight(sample_dist.x) * SpatialWeight(sample_dist.y);
+		
+				temporal_color_sum += sample_color.rgb * weight;
+				temporal_weight_sum += weight;
+			}
+		}
+		temporal_color = temporal_color_sum.rgb / max(1e-6, temporal_weight_sum);
+		temporal_weight = min(1.0, temporal_weight_sum);
+
 		vec2 velocity = motion * vec2(size);
-		float velocity_weight = clamp(1.0 - length(velocity) / 64.0, 0.0, 1.0); 
+		float velocity_weight = clamp(1.0 - length(velocity) / 256.0, 0.0, 1.0); 
 		temporal_weight *= velocity_weight;
 		
 		// a b c
@@ -73,23 +106,20 @@ void main()
 		vec3 ch = texelFetch(Color, coord + ivec2( 0,  1), 0).rgb;
 		vec3 ci = texelFetch(Color, coord + ivec2( 1,  1), 0).rgb;
 
-		// Calculate current color
-		const float sharpness = 0.2;
-		vec3 current_color = max(vec3(0.0), ce * (1.0 + sharpness) - (ca + cb + cc + cd + cf + cg + ch + ci) * (0.125 * sharpness));
-
 		// Clip temporal color
 		vec3 m1 = (ca + cb + cc + cd + ce + cf + cg + ch + ci) / 9.0;
 		vec3 m2 = (ca * ca + cb * cb + cc * cc + cd * cd + ce * ce + cf * cf + cg * cg + ch * ch + ci * ci) / 9.0;
-		vec3 extent = sqrt(max(vec3(0.0), m2 - m1 * m1)) * mix(1.0, 4.0, clamp(-63.0 + 64.0 * temporal_weight, 0.0, 1.0));
+		vec3 extent = sqrt(max(vec3(0.0), m2 - m1 * m1)) * mix(1.0, 4.0, clamp(temporal_weight * temporal_weight, 0.0, 1.0));
 		vec3 displacement = temporal_color - m1;
 		vec3 units = abs(displacement / extent);
 		float max_unit = max(max(units.x, units.y), max(units.z, 1.0));
 		temporal_color = m1 + displacement / max_unit;
 
 		// Blend current and temporal color
-		float w0 = LumaWeight(current_color) * (1.0 - temporal_weight);
-		float w1 = LumaWeight(temporal_color) * temporal_weight;
-		temporal_color = (current_color * w0 + temporal_color * w1) / (w0 + w1);
+		float blend_amount = min(temporal_weight, 0.96);
+		float w0 = LumaWeight(ce) * (1.0 - blend_amount);
+		float w1 = LumaWeight(temporal_color) * blend_amount;
+		temporal_color = (ce * w0 + temporal_color * w1) / (w0 + w1);
 	}
 	else
 	{
@@ -98,9 +128,6 @@ void main()
 	}
 
 	temporal_weight = 1.0 / (2.0 - temporal_weight);
-		
-	temporal_weight = unpackHalf2x16(packHalf2x16(vec2(temporal_weight))).x;
-	temporal_color *= temporal_weight;
 
 	imageStore(OutTemporal, ivec2(gl_GlobalInvocationID.xy), vec4(temporal_color, temporal_weight));
 }
