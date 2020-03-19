@@ -110,14 +110,14 @@ void main()
 
 	if (DebugEnable)
 	{
-		OutColor = DebugIndex == 0 ? base_color.rgb     : OutColor;
-		OutColor = DebugIndex == 1 ? normal * 0.5 + 0.5 : OutColor;
-		OutColor = DebugIndex == 2 ? vec3(metallic)     : OutColor;
-		OutColor = DebugIndex == 3 ? vec3(roughness)    : OutColor;
-		OutColor = DebugIndex == 4 ? vec3(d)            : OutColor;
-		OutColor = DebugIndex == 5 ? vec3(g)            : OutColor;
-		OutColor = DebugIndex == 6 ? vec3(f)            : OutColor;
-		OutColor = DebugIndex == 7 ? vec3(shadow)       : OutColor;
-		OutColor = DebugIndex == 8 ? vec3(ao)           : OutColor;
+		OutColor = DebugIndex == 0 ? pow(base_color.rgb, vec3(1.0 / 2.2))   : OutColor;
+		OutColor = DebugIndex == 1 ? normal * 0.5 + 0.5						: OutColor;
+		OutColor = DebugIndex == 2 ? vec3(metallic)							: OutColor;
+		OutColor = DebugIndex == 3 ? vec3(roughness)						: OutColor;
+		OutColor = DebugIndex == 4 ? vec3(d)								: OutColor;
+		OutColor = DebugIndex == 5 ? vec3(g)								: OutColor;
+		OutColor = DebugIndex == 6 ? vec3(f)								: OutColor;
+		OutColor = DebugIndex == 7 ? vec3(shadow)							: OutColor;
+		OutColor = DebugIndex == 8 ? vec3(ao)								: OutColor;
 	}
 }
