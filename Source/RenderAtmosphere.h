@@ -27,7 +27,7 @@ public:
     VkPipelineLayout        m_SkyPipelineLayout                                 = VK_NULL_HANDLE;
     VkPipeline              m_SkyPipeline                                       = VK_NULL_HANDLE;
 
-	float					m_SkyLightIntensity									= 4.0f;
+	float					m_SkyLightIntensity									= 180.0f;
 
     void                    Create(const RenderContext& rc);
     void                    Destroy();
