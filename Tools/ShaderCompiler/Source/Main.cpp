@@ -148,7 +148,7 @@ int main(int argc, char* argv[])
 #else
 	std::string executable_path = "${VULKAN_SDK}/bin/glslangValidator";
 #endif
-        std::string command = executable_path + " -V -o " + out_dir + file.Path + " " + in_dir + file.Path + " --target-env vulkan1.1";
+        std::string command = executable_path + " -V -o " + out_dir + file.Path + " " + in_dir + file.Path + " --target-env vulkan1.2";
         int status = system(command.c_str());
         if (status == 0)
         {

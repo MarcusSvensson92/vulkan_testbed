@@ -309,3 +309,18 @@ void VkUtilImageBarrier(VkCommandBuffer cmd, VkImage image, VkImageLayout old_la
     barrier.subresourceRange.layerCount = layer_count;
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, NULL, 0, NULL, 1, &barrier);
 }
+
+VkDeviceAddress VkUtilGetDeviceAddress(VkBuffer buffer)
+{
+    VkBufferDeviceAddressInfoKHR device_address_info = {};
+    device_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
+    device_address_info.buffer = buffer;
+    return vkGetBufferDeviceAddressKHR(Vk.Device, &device_address_info);
+}
+VkDeviceAddress VkUtilGetDeviceAddress(VkAccelerationStructureKHR acceleration_structure)
+{
+    VkAccelerationStructureDeviceAddressInfoKHR device_address_info = {};
+    device_address_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+    device_address_info.accelerationStructure = acceleration_structure;
+    return vkGetAccelerationStructureDeviceAddressKHR(Vk.Device, &device_address_info);
+}

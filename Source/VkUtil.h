@@ -49,3 +49,6 @@ struct VkUtilCreateComputePipelineParams
 VkPipeline                                              VkUtilCreateComputePipeline(const VkUtilCreateComputePipelineParams& params);
 
 void                                                    VkUtilImageBarrier(VkCommandBuffer cmd, VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkImageAspectFlags aspect_mask, uint32_t base_mip = 0, uint32_t mip_count = VK_REMAINING_MIP_LEVELS, uint32_t base_layer = 0, uint32_t layer_count = VK_REMAINING_ARRAY_LAYERS);
+
+VkDeviceAddress                                         VkUtilGetDeviceAddress(VkBuffer buffer);
+VkDeviceAddress                                         VkUtilGetDeviceAddress(VkAccelerationStructureKHR acceleration_structure);

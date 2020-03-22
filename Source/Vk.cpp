@@ -168,7 +168,7 @@ static void CreateSwapchain(uint32_t width, uint32_t height, uint32_t image_coun
         };
         if (Vk.IsRayTracingSupported)
         {
-            descriptor_pool_sizes.push_back({ VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV, 65535 });
+            descriptor_pool_sizes.push_back({ VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 65535 });
         }
         VkDescriptorPoolCreateInfo pool_info = {};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -266,7 +266,7 @@ void VkInitialize(const VkInitializeParams& params)
 
 	VkApplicationInfo app_info = {};
 	app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-	app_info.apiVersion = VK_API_VERSION_1_1;
+	app_info.apiVersion = VK_API_VERSION_1_2;
 
 	VkInstanceCreateInfo instance_info = {};
 	instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -397,14 +397,43 @@ void VkInitialize(const VkInitializeParams& params)
     std::vector<VkExtensionProperties> device_extension_properties(device_extension_properties_count);
     VK(vkEnumerateDeviceExtensionProperties(Vk.PhysicalDevice, NULL, &device_extension_properties_count, device_extension_properties.data()));
 
-    Vk.IsRayTracingSupported = false;
-    for (uint32_t k = 0; k < device_extension_properties_count; ++k)
+    std::vector<const char*> ray_tracing_extensions =
     {
-        if (strcmp(device_extension_properties[k].extensionName, VK_NV_RAY_TRACING_EXTENSION_NAME) == 0)
+        VK_KHR_RAY_TRACING_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+        VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
+        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+    };
+    if (params.EnableValidationLayer)
+    {
+        // For some reason, vkBindAccelerationStructureMemoryKHR is not loaded properly when VK_LAYER_LUNARG_standard_validation is enabled unless VK_NV_ray_tracing is also enabled
+        ray_tracing_extensions.push_back(VK_NV_RAY_TRACING_EXTENSION_NAME);
+    }
+
+    Vk.IsRayTracingSupported = true;
+    for (size_t i = 0; i < ray_tracing_extensions.size(); ++i)
+    {
+        bool is_extension_supported = false;
+        for (uint32_t j = 0; j < device_extension_properties_count; ++j)
         {
-            device_extensions.push_back(VK_NV_RAY_TRACING_EXTENSION_NAME);
-            Vk.IsRayTracingSupported = true;
+            if (strcmp(device_extension_properties[j].extensionName, ray_tracing_extensions[i]) == 0)
+            {
+                is_extension_supported = true;
+                break;
+            }
+        }
+        if (!is_extension_supported)
+        {
+            Vk.IsRayTracingSupported = false;
             break;
+        }
+    }
+    if (Vk.IsRayTracingSupported)
+    {
+        for (size_t i = 0; i < ray_tracing_extensions.size(); ++i)
+        {
+            device_extensions.push_back(ray_tracing_extensions[i]);
         }
     }
 
@@ -419,8 +448,15 @@ void VkInitialize(const VkInitializeParams& params)
 	device_features.samplerAnisotropy = VK_TRUE;
     device_features.shaderStorageImageExtendedFormats = VK_TRUE;
 
+    VkPhysicalDeviceVulkan12Features device_vulkan_1_2_features = {};
+    device_vulkan_1_2_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    device_vulkan_1_2_features.bufferDeviceAddress = VK_TRUE;
+    device_vulkan_1_2_features.runtimeDescriptorArray = VK_TRUE;
+    device_vulkan_1_2_features.descriptorBindingPartiallyBound = VK_TRUE;
+
 	VkDeviceCreateInfo device_info = {};
 	device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    device_info.pNext = Vk.IsRayTracingSupported ? &device_vulkan_1_2_features : NULL;
 	device_info.queueCreateInfoCount = 1;
 	device_info.pQueueCreateInfos = &queue_info;
     device_info.enabledExtensionCount = static_cast<uint32_t>(device_extensions.size());
@@ -444,7 +480,7 @@ void VkInitialize(const VkInitializeParams& params)
     VK(vkCreateCommandPool(Vk.Device, &command_pool_info, NULL, &Vk.CommandPool));
 
 	VmaAllocatorCreateInfo allocator_info = {};
-	allocator_info.flags = VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT;
+	allocator_info.flags = VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT | (Vk.IsRayTracingSupported ? VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT : 0);
 	allocator_info.physicalDevice = Vk.PhysicalDevice;
 	allocator_info.device = Vk.Device;
 	allocator_info.pAllocationCallbacks = NULL;
@@ -475,12 +511,6 @@ void VkInitialize(const VkInitializeParams& params)
 	timestamp_query_pool_info.queryCount = TIMESTAMP_QUERY_POOL_SIZE;
 	VK(vkCreateQueryPool(Vk.Device, &timestamp_query_pool_info, NULL, &Vk.TimestampQueryPool));
 	Vk.TimestampQueryPoolOffset = 0;
-	
-	VkRecordCommands(
-		[=](VkCommandBuffer cmd)
-		{
-			vkCmdResetQueryPool(cmd, Vk.TimestampQueryPool, 0, TIMESTAMP_QUERY_POOL_SIZE);
-		});
 }
 void VkTerminate()
 {
@@ -562,7 +592,7 @@ VkCommandBuffer VkBeginFrame()
 		const std::pair<std::string, uint32_t>& label = Vk.TimestampLabelsInFlight.front();
 
 		uint64_t timestamps[2];
-		VkResult result = vkGetQueryPoolResults(Vk.Device, Vk.TimestampQueryPool, label.second, 2, sizeof(uint64_t) * 2, timestamps, 0, VK_QUERY_RESULT_64_BIT);
+		VkResult result = vkGetQueryPoolResults(Vk.Device, Vk.TimestampQueryPool, label.second, 2, sizeof(uint64_t) * 2, timestamps, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
 		assert(result == VK_SUCCESS || result == VK_NOT_READY);
 		if (result == VK_NOT_READY)
 		{
@@ -576,8 +606,6 @@ VkCommandBuffer VkBeginFrame()
 			Vk.TimestampLabelsResult[label.first] = 0.0f;
 		}
 		Vk.TimestampLabelsResult[label.first] += (duration - Vk.TimestampLabelsResult[label.first]) * 0.25f;
-
-		vkCmdResetQueryPool(cmd, Vk.TimestampQueryPool, label.second, 2);
 
 		Vk.TimestampLabelsInFlight.erase(Vk.TimestampLabelsInFlight.begin());
 	}
@@ -693,7 +721,7 @@ VkDescriptorSet VkCreateDescriptorSetForCurrentFrame(VkDescriptorSetLayout layou
             case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
                 write_info[i].pTexelBufferView = entry.ArrayCount > 1 ? entry.TexelBufferInfos : &entry.TexelBufferInfo;
                 break;
-            case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_NV:
+            case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
                 write_info[i].pNext = entry.ArrayCount > 1 ? entry.AccelerationStructureInfos : &entry.AccelerationStructureInfo;
                 break;
         }
@@ -723,13 +751,13 @@ VkDescriptorSetEntry::VkDescriptorSetEntry(uint32_t binding, VkDescriptorType ty
     BufferInfo.offset = offset;
     BufferInfo.range = size;
 }
-VkDescriptorSetEntry::VkDescriptorSetEntry(uint32_t binding, VkDescriptorType type, uint32_t array_index, VkAccelerationStructureNV acceleration_structure)
+VkDescriptorSetEntry::VkDescriptorSetEntry(uint32_t binding, VkDescriptorType type, uint32_t array_index, VkAccelerationStructureKHR acceleration_structure)
 {
     Binding = binding;
     Type = type;
 	ArrayIndex = array_index;
 	ArrayCount = 1;
-    AccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV;
+    AccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
     AccelerationStructureInfo.pNext = NULL;
     AccelerationStructureInfo.accelerationStructureCount = 1;
     AccelerationStructureInfo.pAccelerationStructures = &acceleration_structure;
@@ -774,6 +802,7 @@ void VkPushLabel(VkCommandBuffer cmd, const std::string& label)
 	if (Vk.TimestampQueryPoolOffset >= TIMESTAMP_QUERY_POOL_SIZE)
 		Vk.TimestampQueryPoolOffset = 0;
 	Vk.TimestampLabelsPushed.push_back({ label, query });
+    vkCmdResetQueryPool(cmd, Vk.TimestampQueryPool, query, 2);
 	vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, Vk.TimestampQueryPool, query);
 }
 void VkPopLabel(VkCommandBuffer cmd)

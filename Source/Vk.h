@@ -129,17 +129,17 @@ struct VkDescriptorSetEntry
 		VkDescriptorImageInfo								ImageInfo;
 		VkDescriptorBufferInfo								BufferInfo;
 		VkBufferView										TexelBufferInfo;
-		VkWriteDescriptorSetAccelerationStructureNV			AccelerationStructureInfo;
+		VkWriteDescriptorSetAccelerationStructureKHR		AccelerationStructureInfo;
 
 		const VkDescriptorImageInfo*						ImageInfos;
 		const VkDescriptorBufferInfo*						BufferInfos;
 		const VkBufferView*									TexelBufferInfos;
-		const VkWriteDescriptorSetAccelerationStructureNV*	AccelerationStructureInfos;
+		const VkWriteDescriptorSetAccelerationStructureKHR*	AccelerationStructureInfos;
 	};
 
 	VkDescriptorSetEntry(uint32_t binding, VkDescriptorType type, uint32_t array_index, VkImageView image_view, VkImageLayout image_layout, VkSampler sampler = NULL);
 	VkDescriptorSetEntry(uint32_t binding, VkDescriptorType type, uint32_t array_index, VkBuffer buffer, VkDeviceSize offset = 0ULL, VkDeviceSize size = VK_WHOLE_SIZE);
-	VkDescriptorSetEntry(uint32_t binding, VkDescriptorType type, uint32_t array_index, VkAccelerationStructureNV acceleration_structure);
+	VkDescriptorSetEntry(uint32_t binding, VkDescriptorType type, uint32_t array_index, VkAccelerationStructureKHR acceleration_structure);
 	
 	VkDescriptorSetEntry(uint32_t binding, VkDescriptorType type, uint32_t array_index, uint32_t array_count, const VkDescriptorImageInfo* infos);
 	VkDescriptorSetEntry(uint32_t binding, VkDescriptorType type, uint32_t array_index, uint32_t array_count, const VkDescriptorBufferInfo* infos);

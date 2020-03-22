@@ -1,9 +1,9 @@
-#version 460
-#extension GL_NV_ray_tracing : enable
+#version 460 core
+#extension GL_EXT_ray_tracing : enable
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
 
-hitAttributeNV vec2 BarycentricCoord;
+hitAttributeEXT vec2 BarycentricCoord;
 
 struct TransparentInstance
 {
@@ -19,7 +19,7 @@ layout(set = 1, binding = 3) uniform sampler2D BaseColorTextures[];
 
 void main()
 {
-	TransparentInstance instance = TransparentInstances[gl_InstanceCustomIndexNV];
+	TransparentInstance instance = TransparentInstances[gl_InstanceCustomIndexEXT];
 
 	uint index_offset = instance.IndexOffset + gl_PrimitiveID * 3;
 	uint vertex_offset = instance.VertexOffset;
@@ -40,7 +40,7 @@ void main()
 	// TODO: Proper mip level calculation
 	float alpha = textureLod(BaseColorTextures[instance.TextureIndex], tex_coord, 0.0).a;
 	if (alpha < 0.5)
-		ignoreIntersectionNV();
+		ignoreIntersectionEXT();
 	else
-		terminateRayNV();
+		terminateRayEXT();
 }

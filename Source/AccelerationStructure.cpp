@@ -1,45 +1,48 @@
 #include "AccelerationStructure.h"
 #include "VkUtil.h"
 
-static void AddBottomLevel(std::vector<AccelerationStructureBottomLevel>& acceleration_structures, const std::vector<VkGeometryNV>& geometries, const glm::mat4& transform, uint32_t instance_index = 0xffffffffu)
+static void AddBottomLevel(std::vector<AccelerationStructureBottomLevel>& acceleration_structures, std::vector<VkAccelerationStructureGeometryKHR>&& geometries, std::vector<VkAccelerationStructureBuildOffsetInfoKHR>&& geometry_offsets, const std::vector<VkAccelerationStructureCreateGeometryTypeInfoKHR>& geometry_types, const glm::mat4& transform, uint32_t instance_index = 0xffffffffu)
 {
 	AccelerationStructureBottomLevel acceleration_structure;
 	acceleration_structure.Geometries = std::move(geometries);
+	acceleration_structure.GeometryOffsets = std::move(geometry_offsets);
 	acceleration_structure.Transform = transform;
 	acceleration_structure.InstanceIndex = instance_index;
 
-	VkAccelerationStructureCreateInfoNV acceleration_structure_info = {};
-	acceleration_structure_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
-	acceleration_structure_info.info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-	acceleration_structure_info.info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
-	acceleration_structure_info.info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV;
-	acceleration_structure_info.info.geometryCount = static_cast<uint32_t>(acceleration_structure.Geometries.size());
-	acceleration_structure_info.info.pGeometries = acceleration_structure.Geometries.data();
-	VK(vkCreateAccelerationStructureNV(Vk.Device, &acceleration_structure_info, NULL, &acceleration_structure.AccelerationStructure));
+	VkAccelerationStructureCreateInfoKHR acceleration_structure_info = {};
+	acceleration_structure_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+	acceleration_structure_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+	acceleration_structure_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+	acceleration_structure_info.maxGeometryCount = static_cast<uint32_t>(geometry_types.size());
+	acceleration_structure_info.pGeometryInfos = geometry_types.data();
+	VK(vkCreateAccelerationStructureKHR(Vk.Device, &acceleration_structure_info, NULL, &acceleration_structure.AccelerationStructure));
 
-	VkAccelerationStructureMemoryRequirementsInfoNV acceleration_structure_memory_requirements_info = {};
-	acceleration_structure_memory_requirements_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
+	VkAccelerationStructureMemoryRequirementsInfoKHR acceleration_structure_memory_requirements_info = {};
+	acceleration_structure_memory_requirements_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_KHR;
+	acceleration_structure_memory_requirements_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_KHR;
+	acceleration_structure_memory_requirements_info.buildType = VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR;
 	acceleration_structure_memory_requirements_info.accelerationStructure = acceleration_structure.AccelerationStructure;
 
 	VkMemoryRequirements2 acceleration_structure_memory_requirements = {};
 	acceleration_structure_memory_requirements.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
-	vkGetAccelerationStructureMemoryRequirementsNV(Vk.Device, &acceleration_structure_memory_requirements_info, &acceleration_structure_memory_requirements);
+	vkGetAccelerationStructureMemoryRequirementsKHR(Vk.Device, &acceleration_structure_memory_requirements_info, &acceleration_structure_memory_requirements);
 	acceleration_structure.MemoryRequirements = acceleration_structure_memory_requirements.memoryRequirements;
 
 	VmaAllocationCreateInfo acceleration_structure_allocation_create_info = {};
+	acceleration_structure_allocation_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 	acceleration_structure_allocation_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
 	VmaAllocationInfo acceleration_structure_allocation_info;
 	VK(vmaAllocateMemory(Vk.Allocator, &acceleration_structure.MemoryRequirements, &acceleration_structure_allocation_create_info, &acceleration_structure.Allocation, &acceleration_structure_allocation_info));
 
-	VkBindAccelerationStructureMemoryInfoNV acceleration_structure_memory_info = {};
-	acceleration_structure_memory_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
+	VkBindAccelerationStructureMemoryInfoKHR acceleration_structure_memory_info = {};
+	acceleration_structure_memory_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_KHR;
 	acceleration_structure_memory_info.accelerationStructure = acceleration_structure.AccelerationStructure;
 	acceleration_structure_memory_info.memory = acceleration_structure_allocation_info.deviceMemory;
 	acceleration_structure_memory_info.memoryOffset = acceleration_structure_allocation_info.offset;
-	VK(vkBindAccelerationStructureMemoryNV(Vk.Device, 1, &acceleration_structure_memory_info));
+	VK(vkBindAccelerationStructureMemoryKHR(Vk.Device, 1, &acceleration_structure_memory_info));
 
-	VK(vkGetAccelerationStructureHandleNV(Vk.Device, acceleration_structure.AccelerationStructure, sizeof(uint64_t), &acceleration_structure.Handle));
+	acceleration_structure.DeviceAddress = VkUtilGetDeviceAddress(acceleration_structure.AccelerationStructure);
 
 	acceleration_structures.emplace_back(acceleration_structure);
 }
@@ -66,32 +69,45 @@ void AccelerationStructure::Create(const RenderContext& rc, uint32_t model_count
 		{
 			const GltfInstance& instance = model.m_Instances[j];
 
-			std::vector<VkGeometryNV> opaque_geometries;
+			std::vector<VkAccelerationStructureGeometryKHR> opaque_geometries;
+			std::vector<VkAccelerationStructureBuildOffsetInfoKHR> opaque_geometry_offsets;
+			std::vector<VkAccelerationStructureCreateGeometryTypeInfoKHR> opaque_geometry_types;
 
 			for (uint32_t k = instance.MeshOffset; k < (instance.MeshOffset + instance.MeshCount); ++k)
 			{
 				const GltfMesh& mesh = model.m_Meshes[k];
 				const GltfMaterial& material = model.m_Materials[mesh.MaterialIndex];
 
-				VkGeometryNV geometry = {};
-				geometry.sType = VK_STRUCTURE_TYPE_GEOMETRY_NV;
-				geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_NV;
-				geometry.geometry.aabbs.sType = VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV;
-				geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV;
-				geometry.geometry.triangles.vertexData = model.m_VertexBuffer;
-				geometry.geometry.triangles.vertexOffset = model.m_VertexBufferOffsets[VERTEX_ATTRIBUTE_POSITION] + static_cast<VkDeviceSize>(mesh.VertexOffset) * sizeof(glm::vec3);
-				geometry.geometry.triangles.vertexCount = mesh.VertexCount;
-				geometry.geometry.triangles.vertexStride = sizeof(glm::vec3);
+				VkAccelerationStructureGeometryKHR geometry = {};
+				geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+				geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+				geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
 				geometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-				geometry.geometry.triangles.indexData = model.m_IndexBuffer;
-				geometry.geometry.triangles.indexOffset = static_cast<VkDeviceSize>(mesh.IndexOffset) * sizeof(uint16_t);
-				geometry.geometry.triangles.indexCount = mesh.IndexCount;
+				geometry.geometry.triangles.vertexData.deviceAddress = VkUtilGetDeviceAddress(model.m_VertexBuffer);
+				geometry.geometry.triangles.vertexStride = sizeof(glm::vec3);
 				geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT16;
-				geometry.flags = material.IsOpaque ? VK_GEOMETRY_OPAQUE_BIT_NV : 0;
+				geometry.geometry.triangles.indexData.deviceAddress = VkUtilGetDeviceAddress(model.m_IndexBuffer);
+				geometry.flags = material.IsOpaque ? VK_GEOMETRY_OPAQUE_BIT_KHR : 0;
+
+				VkAccelerationStructureBuildOffsetInfoKHR geometry_offset = {};
+				geometry_offset.primitiveCount = mesh.IndexCount / 3;
+				geometry_offset.primitiveOffset = mesh.IndexOffset * sizeof(uint16_t);
+				geometry_offset.firstVertex = mesh.VertexOffset + static_cast<uint32_t>(model.m_VertexBufferOffsets[VERTEX_ATTRIBUTE_POSITION] / sizeof(glm::vec3));
+
+				VkAccelerationStructureCreateGeometryTypeInfoKHR geometry_type = {};
+				geometry_type.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_GEOMETRY_TYPE_INFO_KHR;
+				geometry_type.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+				geometry_type.maxPrimitiveCount = mesh.IndexCount / 3;
+				geometry_type.indexType = VK_INDEX_TYPE_UINT16;
+				geometry_type.maxVertexCount = mesh.VertexCount;
+				geometry_type.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+				geometry_type.allowsTransforms = VK_TRUE;
 
 				if (material.IsOpaque)
 				{
 					opaque_geometries.emplace_back(geometry);
+					opaque_geometry_offsets.emplace_back(geometry_offset);
+					opaque_geometry_types.emplace_back(geometry_type);
 				}
 				else
 				{
@@ -100,7 +116,7 @@ void AccelerationStructure::Create(const RenderContext& rc, uint32_t model_count
 						continue;
 					}
 
-					AddBottomLevel(m_BottomLevels, { geometry }, instance.Transform, static_cast<uint32_t>(transparent_instances.size()));
+					AddBottomLevel(m_BottomLevels, { geometry }, { geometry_offset }, { geometry_type }, instance.Transform, static_cast<uint32_t>(transparent_instances.size()));
 					
 					uint32_t texture_index = 0;
 					const uint32_t base_color_texture_count = static_cast<uint32_t>(base_color_textures.size());
@@ -129,7 +145,7 @@ void AccelerationStructure::Create(const RenderContext& rc, uint32_t model_count
 
 			if (!opaque_geometries.empty())
 			{
-				AddBottomLevel(m_BottomLevels, opaque_geometries, instance.Transform);
+				AddBottomLevel(m_BottomLevels, std::move(opaque_geometries), std::move(opaque_geometry_offsets), opaque_geometry_types, instance.Transform);
 			}
 		}
 
@@ -148,21 +164,28 @@ void AccelerationStructure::Create(const RenderContext& rc, uint32_t model_count
 
 	// Top level
 	{
-		VkAccelerationStructureCreateInfoNV acceleration_structure_info = {};
-		acceleration_structure_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV;
-		acceleration_structure_info.info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-		acceleration_structure_info.info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;
-		acceleration_structure_info.info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV;
-		acceleration_structure_info.info.instanceCount = static_cast<uint32_t>(m_BottomLevels.size());
-		VK(vkCreateAccelerationStructureNV(Vk.Device, &acceleration_structure_info, NULL, &m_TopLevel.AccelerationStructure));
+		VkAccelerationStructureCreateGeometryTypeInfoKHR geometry_type = {};
+		geometry_type.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_GEOMETRY_TYPE_INFO_KHR;
+		geometry_type.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+		geometry_type.maxPrimitiveCount = static_cast<uint32_t>(m_BottomLevels.size());
 
-		VkAccelerationStructureMemoryRequirementsInfoNV acceleration_structure_memory_requirements_info = {};
-		acceleration_structure_memory_requirements_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV;
+		VkAccelerationStructureCreateInfoKHR acceleration_structure_info = {};
+		acceleration_structure_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+		acceleration_structure_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+		acceleration_structure_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+		acceleration_structure_info.maxGeometryCount = 1;
+		acceleration_structure_info.pGeometryInfos = &geometry_type;
+		VK(vkCreateAccelerationStructureKHR(Vk.Device, &acceleration_structure_info, NULL, &m_TopLevel.AccelerationStructure));
+
+		VkAccelerationStructureMemoryRequirementsInfoKHR acceleration_structure_memory_requirements_info = {};
+		acceleration_structure_memory_requirements_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_KHR;
+		acceleration_structure_memory_requirements_info.type = VK_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_TYPE_OBJECT_KHR;
+		acceleration_structure_memory_requirements_info.buildType = VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR;
 		acceleration_structure_memory_requirements_info.accelerationStructure = m_TopLevel.AccelerationStructure;
 
 		VkMemoryRequirements2 acceleration_structure_memory_requirements = {};
 		acceleration_structure_memory_requirements.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
-		vkGetAccelerationStructureMemoryRequirementsNV(Vk.Device, &acceleration_structure_memory_requirements_info, &acceleration_structure_memory_requirements);
+		vkGetAccelerationStructureMemoryRequirementsKHR(Vk.Device, &acceleration_structure_memory_requirements_info, &acceleration_structure_memory_requirements);
 		m_TopLevel.MemoryRequirements = acceleration_structure_memory_requirements.memoryRequirements;
 
 		VmaAllocationCreateInfo acceleration_structure_allocation_create_info = {};
@@ -171,12 +194,12 @@ void AccelerationStructure::Create(const RenderContext& rc, uint32_t model_count
 		VmaAllocationInfo acceleration_structure_allocation_info;
 		VK(vmaAllocateMemory(Vk.Allocator, &m_TopLevel.MemoryRequirements, &acceleration_structure_allocation_create_info, &m_TopLevel.Allocation, &acceleration_structure_allocation_info));
 
-		VkBindAccelerationStructureMemoryInfoNV acceleration_structure_memory_info = {};
-		acceleration_structure_memory_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV;
+		VkBindAccelerationStructureMemoryInfoKHR acceleration_structure_memory_info = {};
+		acceleration_structure_memory_info.sType = VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_KHR;
 		acceleration_structure_memory_info.accelerationStructure = m_TopLevel.AccelerationStructure;
 		acceleration_structure_memory_info.memory = acceleration_structure_allocation_info.deviceMemory;
 		acceleration_structure_memory_info.memoryOffset = acceleration_structure_allocation_info.offset;
-		VK(vkBindAccelerationStructureMemoryNV(Vk.Device, 1, &acceleration_structure_memory_info));
+		VK(vkBindAccelerationStructureMemoryKHR(Vk.Device, 1, &acceleration_structure_memory_info));
 	}
 
 	// Scratch buffer
@@ -199,7 +222,7 @@ void AccelerationStructure::Create(const RenderContext& rc, uint32_t model_count
 		VkBufferCreateInfo buffer_create_info = {};
 		buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		buffer_create_info.size = scratch_buffer_size;
-		buffer_create_info.usage = VK_BUFFER_USAGE_RAY_TRACING_BIT_NV;
+		buffer_create_info.usage = VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 		VK(vkCreateBuffer(Vk.Device, &buffer_create_info, NULL, &m_ScratchBuffer));
@@ -214,27 +237,27 @@ void AccelerationStructure::Create(const RenderContext& rc, uint32_t model_count
 	{
 		VkBufferCreateInfo buffer_create_info = {};
 		buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		buffer_create_info.size = sizeof(VkGeometryInstanceNV) * m_BottomLevels.size();
-		buffer_create_info.usage = VK_BUFFER_USAGE_RAY_TRACING_BIT_NV | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		buffer_create_info.size = sizeof(VkAccelerationStructureInstanceKHR) * m_BottomLevels.size();
+		buffer_create_info.usage = VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 		VmaAllocationCreateInfo allocation_create_info = {};
 		allocation_create_info.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 		allocation_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 		VK(vmaCreateBuffer(Vk.Allocator, &buffer_create_info, &allocation_create_info, &m_GeometryInstanceBuffer, &m_GeometryInstanceBufferAllocation, NULL));
-		
+
 		VkAllocation buffer_allocation = VkAllocateUploadBuffer(buffer_create_info.size);
 		for (size_t i = 0; i < m_BottomLevels.size(); ++i)
 		{
-			VkGeometryInstanceNV& instance = reinterpret_cast<VkGeometryInstanceNV*>(buffer_allocation.Data)[i];
-			instance.transform[0] = m_BottomLevels[i].Transform[0][0]; instance.transform[1] = m_BottomLevels[i].Transform[1][0]; instance.transform[2]  = m_BottomLevels[i].Transform[2][0]; instance.transform[3]  = m_BottomLevels[i].Transform[3][0];
-			instance.transform[4] = m_BottomLevels[i].Transform[0][1]; instance.transform[5] = m_BottomLevels[i].Transform[1][1]; instance.transform[6]  = m_BottomLevels[i].Transform[2][1]; instance.transform[7]  = m_BottomLevels[i].Transform[3][1];
-			instance.transform[8] = m_BottomLevels[i].Transform[0][2]; instance.transform[9] = m_BottomLevels[i].Transform[1][2]; instance.transform[10] = m_BottomLevels[i].Transform[2][2]; instance.transform[11] = m_BottomLevels[i].Transform[3][2];
+			VkAccelerationStructureInstanceKHR& instance = reinterpret_cast<VkAccelerationStructureInstanceKHR*>(buffer_allocation.Data)[i];
+			instance.transform.matrix[0][0] = m_BottomLevels[i].Transform[0][0]; instance.transform.matrix[0][1] = m_BottomLevels[i].Transform[1][0]; instance.transform.matrix[0][2] = m_BottomLevels[i].Transform[2][0]; instance.transform.matrix[0][3] = m_BottomLevels[i].Transform[3][0];
+			instance.transform.matrix[1][0] = m_BottomLevels[i].Transform[0][1]; instance.transform.matrix[1][1] = m_BottomLevels[i].Transform[1][1]; instance.transform.matrix[1][2] = m_BottomLevels[i].Transform[2][1]; instance.transform.matrix[1][3] = m_BottomLevels[i].Transform[3][1];
+			instance.transform.matrix[2][0] = m_BottomLevels[i].Transform[0][2]; instance.transform.matrix[2][1] = m_BottomLevels[i].Transform[1][2]; instance.transform.matrix[2][2] = m_BottomLevels[i].Transform[2][2]; instance.transform.matrix[2][3] = m_BottomLevels[i].Transform[3][2];
 			instance.instanceCustomIndex = m_BottomLevels[i].InstanceIndex;
 			instance.mask = 0xff;
-			instance.instanceOffset = 0;
+			instance.instanceShaderBindingTableRecordOffset = 0;
 			instance.flags = 0;
-			instance.accelerationStructureHandle = m_BottomLevels[i].Handle;
+			instance.accelerationStructureReference = m_BottomLevels[i].DeviceAddress;
 		}
 
 		VkRecordCommands(
@@ -322,37 +345,62 @@ void AccelerationStructure::Create(const RenderContext& rc, uint32_t model_count
 	VkRecordCommands(
 		[=](VkCommandBuffer cmd)
 		{
+			std::vector<VkAccelerationStructureGeometryKHR> bottom_level_geometries(m_BottomLevels.size());
+
 			// Build bottom level acceleration structures
-			for (const AccelerationStructureBottomLevel& acceleration_structure : m_BottomLevels)
+			const uint32_t bottom_level_count = static_cast<uint32_t>(m_BottomLevels.size());
+			for (uint32_t i = 0; i < bottom_level_count; ++i)
 			{
-				VkAccelerationStructureInfoNV acceleration_structure_info = {};
-				acceleration_structure_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-				acceleration_structure_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_NV;
-				acceleration_structure_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV;
-				acceleration_structure_info.geometryCount = static_cast<uint32_t>(acceleration_structure.Geometries.size());
-				acceleration_structure_info.pGeometries = acceleration_structure.Geometries.data();
-				vkCmdBuildAccelerationStructureNV(cmd, &acceleration_structure_info, VK_NULL_HANDLE, 0, VK_FALSE, acceleration_structure.AccelerationStructure, VK_NULL_HANDLE, m_ScratchBuffer, 0);
+				const AccelerationStructureBottomLevel& acceleration_structure = m_BottomLevels[i];
+
+				const VkAccelerationStructureGeometryKHR* geometries = acceleration_structure.Geometries.data();
+				const VkAccelerationStructureBuildOffsetInfoKHR* geometry_offsets = acceleration_structure.GeometryOffsets.data();
+
+				VkAccelerationStructureBuildGeometryInfoKHR build_geometry_info = {};
+				build_geometry_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+				build_geometry_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+				build_geometry_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+				build_geometry_info.dstAccelerationStructure = acceleration_structure.AccelerationStructure;
+				build_geometry_info.geometryCount = static_cast<uint32_t>(acceleration_structure.Geometries.size());
+				build_geometry_info.ppGeometries = &geometries;
+				build_geometry_info.scratchData.deviceAddress = VkUtilGetDeviceAddress(m_ScratchBuffer);
+				vkCmdBuildAccelerationStructureKHR(cmd, 1, &build_geometry_info, &geometry_offsets);
 
 				VkMemoryBarrier barrier = {};
 				barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-				barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV;
-				barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV;
-				vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV | VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0, 1, &barrier, 0, NULL, 0, NULL);
+				barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+				barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+				vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0, 1, &barrier, 0, NULL, 0, NULL);
+
+				bottom_level_geometries[i] = {};
+				bottom_level_geometries[i].sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+				bottom_level_geometries[i].geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+				bottom_level_geometries[i].geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+				bottom_level_geometries[i].geometry.instances.data.deviceAddress = VkUtilGetDeviceAddress(m_GeometryInstanceBuffer);
 			}
 
+			VkAccelerationStructureBuildOffsetInfoKHR geometry_offset = {};
+			geometry_offset.primitiveCount = bottom_level_count;
+
+			const VkAccelerationStructureGeometryKHR* geometries = bottom_level_geometries.data();
+			const VkAccelerationStructureBuildOffsetInfoKHR* geometry_offsets = &geometry_offset;
+
 			// Build top level acceleration structure
-			VkAccelerationStructureInfoNV acceleration_structure_info = {};
-			acceleration_structure_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV;
-			acceleration_structure_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_NV;
-			acceleration_structure_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_NV;
-			acceleration_structure_info.instanceCount = static_cast<uint32_t>(m_BottomLevels.size());
-			vkCmdBuildAccelerationStructureNV(cmd, &acceleration_structure_info, m_GeometryInstanceBuffer, 0, VK_FALSE, m_TopLevel.AccelerationStructure, VK_NULL_HANDLE, m_ScratchBuffer, 0);
+			VkAccelerationStructureBuildGeometryInfoKHR build_geometry_info = {};
+			build_geometry_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+			build_geometry_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+			build_geometry_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+			build_geometry_info.dstAccelerationStructure = m_TopLevel.AccelerationStructure;
+			build_geometry_info.geometryCount = static_cast<uint32_t>(bottom_level_geometries.size());
+			build_geometry_info.ppGeometries = &geometries;
+			build_geometry_info.scratchData.deviceAddress = VkUtilGetDeviceAddress(m_ScratchBuffer);
+			vkCmdBuildAccelerationStructureKHR(cmd, 1, &build_geometry_info, &geometry_offsets);
 
 			VkMemoryBarrier barrier = {};
 			barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-			barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV;
-			barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_NV | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_NV;
-			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_NV | VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_NV, 0, 1, &barrier, 0, NULL, 0, NULL);
+			barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+			barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR | VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+			vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0, 1, &barrier, 0, NULL, 0, NULL);
 		});
 }
 
@@ -370,12 +418,12 @@ void AccelerationStructure::Destroy()
 	vkDestroyBuffer(Vk.Device, m_ScratchBuffer, NULL);
 	vmaFreeMemory(Vk.Allocator, m_ScratchBufferAllocation);
 
-	vkDestroyAccelerationStructureNV(Vk.Device, m_TopLevel.AccelerationStructure, nullptr);
+	vkDestroyAccelerationStructureKHR(Vk.Device, m_TopLevel.AccelerationStructure, nullptr);
 	vmaFreeMemory(Vk.Allocator, m_TopLevel.Allocation);
 
 	for (const AccelerationStructureBottomLevel& acceleration_structure : m_BottomLevels)
 	{
-		vkDestroyAccelerationStructureNV(Vk.Device, acceleration_structure.AccelerationStructure, nullptr);
+		vkDestroyAccelerationStructureKHR(Vk.Device, acceleration_structure.AccelerationStructure, nullptr);
 		vmaFreeMemory(Vk.Allocator, acceleration_structure.Allocation);
 	}
 }
