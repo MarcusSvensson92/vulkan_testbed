@@ -2,11 +2,11 @@
 
 A pet project for experimenting with various graphics techniques in Vulkan.
 
-![screenshot](https://user-images.githubusercontent.com/3328360/68069386-f83d5400-fd5f-11e9-8c60-6c747b33b26b.png)
+![screenshot](https://user-images.githubusercontent.com/3328360/77348147-3e0fae80-6d39-11ea-8d42-04c43f7d7cc6.png)
 
 ## Features
 * PBR lighting with glTF 2.0 models
-* Ray-traced soft shadows (requires NV ray tracing support)
+* Ray-traced soft shadows (requires VK_KHR_ray_tracing support)
 * Atmospheric scattering
 * SSAO (HBAO)
 * TAA
