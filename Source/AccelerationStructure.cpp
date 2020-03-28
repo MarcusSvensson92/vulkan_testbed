@@ -29,7 +29,6 @@ static void AddBottomLevel(std::vector<AccelerationStructureBottomLevel>& accele
 	acceleration_structure.MemoryRequirements = acceleration_structure_memory_requirements.memoryRequirements;
 
 	VmaAllocationCreateInfo acceleration_structure_allocation_create_info = {};
-	acceleration_structure_allocation_create_info.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 	acceleration_structure_allocation_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
 	VmaAllocationInfo acceleration_structure_allocation_info;
