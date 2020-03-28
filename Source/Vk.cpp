@@ -405,11 +405,6 @@ void VkInitialize(const VkInitializeParams& params)
         VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
         VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
     };
-    if (params.EnableValidationLayer)
-    {
-        // For some reason, vkBindAccelerationStructureMemoryKHR is not loaded properly when VK_LAYER_LUNARG_standard_validation is enabled unless VK_NV_ray_tracing is also enabled
-        ray_tracing_extensions.push_back(VK_NV_RAY_TRACING_EXTENSION_NAME);
-    }
 
     Vk.IsRayTracingSupported = true;
     for (size_t i = 0; i < ray_tracing_extensions.size(); ++i)
@@ -448,15 +443,20 @@ void VkInitialize(const VkInitializeParams& params)
 	device_features.samplerAnisotropy = VK_TRUE;
     device_features.shaderStorageImageExtendedFormats = VK_TRUE;
 
-    VkPhysicalDeviceVulkan12Features device_vulkan_1_2_features = {};
-    device_vulkan_1_2_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    device_vulkan_1_2_features.bufferDeviceAddress = VK_TRUE;
-    device_vulkan_1_2_features.runtimeDescriptorArray = VK_TRUE;
-    device_vulkan_1_2_features.descriptorBindingPartiallyBound = VK_TRUE;
+	VkPhysicalDeviceVulkan12Features device_vulkan_1_2_features = {};
+	device_vulkan_1_2_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+	device_vulkan_1_2_features.bufferDeviceAddress = VK_TRUE;
+	device_vulkan_1_2_features.runtimeDescriptorArray = VK_TRUE;
+	device_vulkan_1_2_features.descriptorBindingPartiallyBound = VK_TRUE;
+
+	VkPhysicalDeviceRayTracingFeaturesKHR device_ray_tracing_features = {};
+	device_ray_tracing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_FEATURES_KHR;
+	device_ray_tracing_features.pNext = &device_vulkan_1_2_features;
+	device_ray_tracing_features.rayTracing = VK_TRUE;
 
 	VkDeviceCreateInfo device_info = {};
 	device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    device_info.pNext = Vk.IsRayTracingSupported ? &device_vulkan_1_2_features : NULL;
+    device_info.pNext = Vk.IsRayTracingSupported ? &device_ray_tracing_features : NULL;
 	device_info.queueCreateInfoCount = 1;
 	device_info.pQueueCreateInfos = &queue_info;
     device_info.enabledExtensionCount = static_cast<uint32_t>(device_extensions.size());

@@ -120,7 +120,7 @@ bool GltfModel::Load(const std::string& filepath)
     VkBufferCreateInfo vertex_buffer_info = {};
     vertex_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     vertex_buffer_info.size = vertex_buffer_size;
-    vertex_buffer_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    vertex_buffer_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | (Vk.IsRayTracingSupported ? VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT : 0);
     vertex_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     VmaAllocationCreateInfo vertex_buffer_allocation_info = {};
@@ -132,7 +132,7 @@ bool GltfModel::Load(const std::string& filepath)
     VkBufferCreateInfo index_buffer_info = {};
     index_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     index_buffer_info.size = index_buffer_size;
-    index_buffer_info.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    index_buffer_info.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | (Vk.IsRayTracingSupported ? VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT : 0);
     index_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     VmaAllocationCreateInfo index_buffer_allocation_info = {};
