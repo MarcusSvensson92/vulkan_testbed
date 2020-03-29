@@ -382,6 +382,11 @@ void VkInitialize(const VkInitializeParams& params)
 		if (Vk.GraphicsQueueIndex == ~0U)
 			continue;
 
+		VkPhysicalDeviceProperties device_properties;
+		vkGetPhysicalDeviceProperties(physical_devices[i], &device_properties);
+		if (VK_VERSION_MAJOR(device_properties.apiVersion) < 1 || (VK_VERSION_MAJOR(device_properties.apiVersion) == 1 && VK_VERSION_MINOR(device_properties.apiVersion) < 2))
+			continue;
+
         Vk.PhysicalDevice = physical_devices[i];
 		break;
 	}
