@@ -12,22 +12,14 @@ layout(binding = 3) uniform sampler2D Depth;
 layout(binding = 4) uniform sampler2D Motion;
 layout(binding = 5) uniform sampler2D Temporal;
 
-float LumaWeight(vec3 c)
+float LuminanceWeight(vec3 c)
 {
 	return 1.0 / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)) * Exposure);
 }
 
-float SpatialWeight(float x)
+float Min4(vec4 v)
 {
-    float x2 = x * x;
-    float x3 = x * x * x;
-
-	float y = 0.0;
-    if(x < 1.0)
-        y = 1.5 * x3 - 2.5 * x2 + 1.0;
-    else if (x <= 2.0)
-        y = -0.5 * x3 + 2.5 * x2 - 4.0 * x + 2.0;
-    return y;
+	return min(min(v.x, v.y), min(v.z, v.w));
 }
 
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
@@ -60,38 +52,15 @@ void main()
 		if (dd > closest_depth) { closest_depth = dd; closest_offset = ivec2( 1, 0); }
 		if (de > closest_depth) { closest_depth = de; closest_offset = ivec2( 0, 1); }
 
-		vec2 motion = texelFetch(Motion, coord + closest_offset, 0).rg;
+		vec3 motion = texelFetch(Motion, coord + closest_offset, 0).xyz;
 
-		vec2 tex_coord = (vec2(gl_GlobalInvocationID.xy) + 0.5) / vec2(size);
-		vec2 prev_tex_coord = tex_coord + motion;
+		vec2 prev_tex_coord = ((vec2(gl_GlobalInvocationID.xy) + 0.5) / vec2(size)) + motion.xy;
+		temporal_color = texture(Temporal, prev_tex_coord).rgb;
+		temporal_weight = Min4(textureGather(Temporal, prev_tex_coord, 3));
 
-		vec2 prev_coord = prev_tex_coord * vec2(size);
-
-		vec3 temporal_color_sum = vec3(0.0, 0.0, 0.0);
-		float temporal_weight_sum = 0.0;
-		for (int y = -1; y <= 1; ++y)
-		{
-			for (int x = -1; x <= 1; ++x)
-			{
-				vec2 sample_coord = floor(prev_coord + vec2(x, y)) + 0.5;
-
-				vec4 sample_color = texelFetch(Temporal, ivec2(sample_coord), 0);
-
-				float weight = sample_color.a;
-		
-				vec2 sample_dist = abs(sample_coord - prev_coord);
-				weight *= SpatialWeight(sample_dist.x) * SpatialWeight(sample_dist.y);
-		
-				temporal_color_sum += sample_color.rgb * weight;
-				temporal_weight_sum += weight;
-			}
-		}
-		temporal_color = temporal_color_sum.rgb / max(1e-6, temporal_weight_sum);
-		temporal_weight = min(1.0, temporal_weight_sum);
-
-		vec2 velocity = motion * vec2(size);
-		float velocity_weight = clamp(1.0 - length(velocity) / 256.0, 0.0, 1.0); 
-		temporal_weight *= velocity_weight;
+		float velocity_weight_xy = clamp(1.0 - length(motion.xy * vec2(size)) * (1.0 / 128.0), 0.0, 1.0);
+		float velocity_weight_z = clamp(1.0 - motion.z * 64.0, 0.0, 1.0);
+		temporal_weight *= (velocity_weight_xy * velocity_weight_z);
 		
 		// a b c
 		// d e f
@@ -117,8 +86,8 @@ void main()
 
 		// Blend current and temporal color
 		float blend_amount = min(temporal_weight, 0.96);
-		float w0 = LumaWeight(ce) * (1.0 - blend_amount);
-		float w1 = LumaWeight(temporal_color) * blend_amount;
+		float w0 = LuminanceWeight(ce) * (1.0 - blend_amount);
+		float w1 = LuminanceWeight(temporal_color) * blend_amount;
 		temporal_color = (ce * w0 + temporal_color * w1) / (w0 + w1);
 	}
 	else
