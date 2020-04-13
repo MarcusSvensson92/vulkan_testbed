@@ -15,9 +15,9 @@ public:
 
 	VkTexture				m_IntermediateTexture			= {};
 
-	float					m_Radius						= 1.0f;
+	float					m_Radius						= 0.5f;
 	float					m_Bias							= 0.1f;
-	float					m_Intensity						= 5.0f;
+	float					m_Intensity						= 1.5f;
 
 	bool					m_Blur							= true;
 
