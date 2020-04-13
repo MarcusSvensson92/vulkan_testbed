@@ -23,7 +23,7 @@ void main()
 	vec3 irradiance = vec3(0.0);
 
 	// Generate rays over a hemisphere
-	float ray_count = 0.0;
+	float weight_sum = 0.0;
 	for (float phi = 0.0; phi < 2.0 * PI; phi += 0.025)
 	{
 		for (float theta = 0.0; theta < 0.5 * PI; theta += 0.025)
@@ -72,15 +72,23 @@ void main()
 			float phase_r = PhaseR(cos_angle);
 			float phase_m = PhaseM(cos_angle);
 			
-			// Accumulate irradiance
+			// Calculate radiance
 			vec3 radiance = scatter_r * phase_r * BETA_R + scatter_m * phase_m * BETA_M;
-			irradiance += radiance * (cos(theta) * sin(theta));
 
-			// Increment ray count
-			ray_count += 1.0;
+			// Add sun light
+			radiance += Sun(cos_angle) * scatter_m;
+
+			// Calculate weight
+			float weight = clamp(dot(ray_dir, vec3(0.0, 1.0, 0.0)), 0.0, 1.0);
+
+			// Accumulate irradiance
+			irradiance += radiance * weight * (cos(theta) * sin(theta));
+
+			// Accumulate weight
+			weight_sum += weight;
 		}
 	}
-	irradiance *= PI / ray_count;
+	irradiance *= PI / weight_sum;
 	
 	imageStore(AmbientLightLUT, int(gl_GlobalInvocationID.x), vec4(irradiance, 0.0));
 }

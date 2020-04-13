@@ -67,6 +67,13 @@ float PhaseM(float cos_angle)
 	return (3.0 / (8.0 * PI)) * ((1.0 - MIE_G * MIE_G) * (1.0 + cos_angle * cos_angle)) / ((2.0 + MIE_G * MIE_G) * pow(1.0 + MIE_G * MIE_G - 2.0 * MIE_G * cos_angle, 1.5));
 }
 
+float Sun(float cos_angle)
+{
+	const float g = 0.98;
+	const float g2 = g * g;
+	return pow(1.0 - g, 2.0) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * cos_angle, 1.5)) * 0.005;
+}
+
 float TexCoordToViewAngle(float tex_coord)
 {
 	float horizon_angle = -sqrt(HEIGHT_ABOVE_GROUND * (2.0 * PLANET_RADIUS + HEIGHT_ABOVE_GROUND)) / (PLANET_RADIUS + HEIGHT_ABOVE_GROUND);

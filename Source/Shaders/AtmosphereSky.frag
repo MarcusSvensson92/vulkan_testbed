@@ -38,10 +38,7 @@ void main()
 	OutColor = (scatter_r * phase_r * BETA_R + scatter_m * phase_m * BETA_M) * LightIntensity;
 	
 	// Add sun light
-	float g = 0.98;
-	float g2 = g * g;
-	float sun = pow(1.0 - g, 2.0) / (4.0 * 3.14159265 * pow(1.0 + g2 - 2.0 * g * cos_angle, 1.5)) * 0.005;
-	OutColor += sun * scatter_m;
+	OutColor += Sun(cos_angle) * scatter_m;
 
 	// Prevent negative values
 	OutColor = max(OutColor, 0.0);
