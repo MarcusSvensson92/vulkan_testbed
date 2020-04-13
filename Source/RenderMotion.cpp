@@ -66,8 +66,8 @@ void RenderMotion::Generate(const RenderContext& rc, VkCommandBuffer cmd)
 
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_GeneratePipeline);
 
-	const glm::mat4 curr = rc.CameraCurr.m_Projection * rc.CameraCurr.m_View;
-	const glm::mat4 prev = rc.CameraCurr.m_Projection * rc.CameraPrev.m_View;
+	const glm::mat4 curr = rc.CameraCurr.m_ProjectionNoJitter * rc.CameraCurr.m_View;
+	const glm::mat4 prev = rc.CameraPrev.m_ProjectionNoJitter * rc.CameraPrev.m_View;
 	const glm::mat4 curr_to_prev = prev * glm::inverse(curr);
 
 	const float depth_param = (rc.CameraCurr.m_FarZ - rc.CameraCurr.m_NearZ) / rc.CameraCurr.m_NearZ;
@@ -89,11 +89,11 @@ void RenderMotion::Generate(const RenderContext& rc, VkCommandBuffer cmd)
 
 	struct Constants
 	{
-		glm::mat4	m_CurrToPrev;
+		glm::mat4	CurrToPrev;
 	};
 	VkAllocation constants_allocation = VkAllocateUploadBuffer(sizeof(Constants));
 	Constants* constants = reinterpret_cast<Constants*>(constants_allocation.Data);
-	constants->m_CurrToPrev = post * curr_to_prev * pre;
+	constants->CurrToPrev = post * curr_to_prev * pre;
 
 	VkDescriptorSet set = VkCreateDescriptorSetForCurrentFrame(m_GenerateDescriptorSetLayout,
 		{
