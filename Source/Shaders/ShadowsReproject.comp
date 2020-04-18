@@ -26,7 +26,7 @@ void main()
 	}
 
 	vec2 center_lin_depth = texelFetch(LinearDepth, coord, 0).rg;
-	float phi_depth = center_lin_depth.g + 1e-4;
+	float phi_depth = center_lin_depth.g * 8.0 + 1e-4;
 
 	vec2 moments_sum = vec2(0.0, 0.0);
 	float moments_weight_sum = 0.0;
@@ -62,13 +62,7 @@ void main()
 	{
 		vec3 motion = texelFetch(Motion, coord, 0).xyz;
 
-		vec2 velocity = motion.xy * vec2(size);
-
-		float velocity_weight_xy = clamp(1.0 - length(velocity) * (1.0 / 128.0), 0.0, 1.0); 
-		float velocity_weight_z = clamp(1.0 - abs(motion.z) * 1024.0, 0.0, 1.0);
-		float velocity_weight = velocity_weight_xy * velocity_weight_z;
-
-		vec2 hist_coord = vec2(coord) + velocity;
+		vec2 hist_coord = vec2(coord) + motion.xy * vec2(size);
 		vec2 hist_delta = fract(hist_coord);
 
 		float wx[2] = { 1.0 - hist_delta.x, hist_delta.x };
@@ -100,7 +94,7 @@ void main()
 
 		bool hist_valid = hist_weight_sum > 1e-2;
 		vec4 hist = hist_valid ? hist_sum / hist_weight_sum : vec4(0.0, 0.0, 0.0, 0.0);
-		hist_len = hist_valid ? clamp((hist.w * 32.0 + 1.0) * velocity_weight, 1.0, 32.0) : 1.0;
+		hist_len = hist_valid ? clamp((hist.w * 32.0 + 1.0), 1.0, 32.0) : 1.0;
 
 		float alpha_shadow = hist_valid ? max(AlphaShadow, 1.0 / hist_len) : 1.0;
 		float alpha_moments = hist_valid ? max(AlphaMoments, 1.0 / hist_len) : 1.0;
