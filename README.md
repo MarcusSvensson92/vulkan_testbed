@@ -2,7 +2,7 @@
 
 A pet project for experimenting with various graphics techniques in Vulkan.
 
-![screenshot](https://user-images.githubusercontent.com/3328360/77348147-3e0fae80-6d39-11ea-8d42-04c43f7d7cc6.png)
+![screenshot](https://user-images.githubusercontent.com/3328360/79633451-f3315d00-8165-11ea-862e-92b08bf630f4.png)
 
 ## Features
 * PBR lighting with glTF 2.0 models
