@@ -17,14 +17,35 @@ public:
     VkPipelineLayout        m_ToneMappingPipelineLayout             = VK_NULL_HANDLE;
     VkPipeline              m_ToneMappingPipeline                   = VK_NULL_HANDLE;
 
-	VkDescriptorSetLayout   m_DebugDescriptorSetLayout				= VK_NULL_HANDLE;
-    VkPipelineLayout        m_DebugPipelineLayout					= VK_NULL_HANDLE;
-    VkPipeline              m_DebugPipeline							= VK_NULL_HANDLE;
-
 	bool					m_TemporalAAEnable						= true;
 	VkTexture               m_TemporalTextures[2]					= {};
 
-    float                   m_Exposure                              = 1.0f;
+	VkTexture				m_LuxoDoubleChecker						= {};
+	bool					m_ViewLuxoDoubleChecker					= false;
+
+    float                   m_Exposure                              = 0.5f;
+
+	enum DisplayMapping
+	{
+		DISPLAY_MAPPING_ACES_ODT = 0,
+		DISPLAY_MAPPING_BT2390_EETF,
+		DISPLAY_MAPPING_SDR_EMULATION,
+		DISPLAY_MAPPING_LUM_VIS_SCENE,
+		DISPLAY_MAPPING_LUM_VIS_DISPLAY,
+		DISPLAY_MAPPING_COUNT,
+	};
+	int32_t					m_DisplayMapping						= DISPLAY_MAPPING_BT2390_EETF;
+	int32_t					m_DisplayMappingAux						= DISPLAY_MAPPING_BT2390_EETF;
+	bool					m_DisplayMappingSplitScreen				= false;
+	float					m_DisplayMappingSplitScreenOffset		= 0.0f;
+
+	float					m_HdrDisplayLuminanceMin				= 0.01f;
+	float					m_HdrDisplayLuminanceMax				= 1000.0f;
+
+	float					m_SdrWhiteLevel							= 200.0f;
+
+	float					m_ACESMidPoint							= 25.0f;
+	float					m_BT2390MidPoint						= 25.0f;
 
     void                    Create(const RenderContext& rc);
     void                    Destroy();

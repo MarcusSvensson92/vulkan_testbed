@@ -29,33 +29,62 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(VkDebugReportFlagsEXT flags,
     return VK_FALSE;
 }
 
-static void CreateSwapchain(uint32_t width, uint32_t height, uint32_t image_count)
+static void CreateSwapchain(uint32_t width, uint32_t height, uint32_t image_count, VkDisplayMode display_mode)
 {
     VkSurfaceCapabilitiesKHR surface_capabilities = {};
     VK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(Vk.PhysicalDevice, Vk.Surface, &surface_capabilities));
     Vk.SwapchainImageExtent.width = VkMin(VkMax(width, surface_capabilities.minImageExtent.width), surface_capabilities.maxImageExtent.width);
     Vk.SwapchainImageExtent.height = VkMin(VkMax(height, surface_capabilities.minImageExtent.height), surface_capabilities.maxImageExtent.height);
     Vk.SwapchainImageCount = surface_capabilities.maxImageCount == 0 ? VkMax(image_count, surface_capabilities.minImageCount) : VkMin(VkMax(image_count, surface_capabilities.minImageCount), surface_capabilities.maxImageCount);
+	
+	Vk.DisplayMode = display_mode;
 
     uint32_t surface_format_count = 0;
     VK(vkGetPhysicalDeviceSurfaceFormatsKHR(Vk.PhysicalDevice, Vk.Surface, &surface_format_count, NULL));
     std::vector<VkSurfaceFormatKHR> surface_formats(surface_format_count);
     VK(vkGetPhysicalDeviceSurfaceFormatsKHR(Vk.PhysicalDevice, Vk.Surface, &surface_format_count, surface_formats.data()));
 
-    bool surface_format_supported = false;
-    for (uint32_t i = 0; i < surface_format_count; ++i)
-    {
-        if ((surface_formats[i].format == VK_FORMAT_R8G8B8A8_UNORM || surface_formats[i].format == VK_FORMAT_B8G8R8A8_UNORM) && surface_formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-        {
-            Vk.SwapchainSurfaceFormat = surface_formats[i];
-            surface_format_supported = true;
-            break;
-        }
-    }
-    if (!surface_format_supported)
-    {
-        VkError("Surface format is not supported");
-    }
+	bool surface_format_supported = false;
+	switch (Vk.DisplayMode)
+	{
+	case VK_DISPLAY_MODE_SDR:
+		for (uint32_t i = 0; i < surface_format_count; ++i)
+		{
+			if ((surface_formats[i].format == VK_FORMAT_R8G8B8A8_UNORM || surface_formats[i].format == VK_FORMAT_B8G8R8A8_UNORM) && surface_formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+			{
+				Vk.SwapchainSurfaceFormat = surface_formats[i];
+				surface_format_supported = true;
+				break;
+			}
+		}
+		break;
+	case VK_DISPLAY_MODE_HDR10:
+		for (uint32_t i = 0; i < surface_format_count; ++i)
+		{
+			if ((surface_formats[i].format == VK_FORMAT_A2R10G10B10_UNORM_PACK32 || surface_formats[i].format == VK_FORMAT_A2B10G10R10_UNORM_PACK32) && surface_formats[i].colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT)
+			{
+				Vk.SwapchainSurfaceFormat = surface_formats[i];
+				surface_format_supported = true;
+				break;
+			}
+		}
+		break;
+	case VK_DISPLAY_MODE_SCRGB:
+		for (uint32_t i = 0; i < surface_format_count; ++i)
+		{
+			if ((surface_formats[i].format == VK_FORMAT_R16G16B16A16_SFLOAT) && surface_formats[i].colorSpace == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT)
+			{
+				Vk.SwapchainSurfaceFormat = surface_formats[i];
+				surface_format_supported = true;
+				break;
+			}
+		}
+		break;
+	}
+	if (!surface_format_supported)
+	{
+		VkError("Surface format is not supported");
+	}
 
     uint32_t present_mode_count = 0;
     VK(vkGetPhysicalDeviceSurfacePresentModesKHR(Vk.PhysicalDevice, Vk.Surface, &present_mode_count, NULL));
@@ -76,7 +105,28 @@ static void CreateSwapchain(uint32_t width, uint32_t height, uint32_t image_coun
     swapchain_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     swapchain_info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
     swapchain_info.clipped = VK_TRUE;
+	swapchain_info.oldSwapchain = Vk.Swapchain;
     VK(vkCreateSwapchainKHR(Vk.Device, &swapchain_info, NULL, &Vk.Swapchain));
+
+	if (swapchain_info.oldSwapchain != VK_NULL_HANDLE)
+	{
+		vkDestroySwapchainKHR(Vk.Device, swapchain_info.oldSwapchain, NULL);
+	}
+
+	if (Vk.DisplayMode == VK_DISPLAY_MODE_HDR10 || Vk.DisplayMode == VK_DISPLAY_MODE_SCRGB)
+	{
+		VkHdrMetadataEXT hdr_metadata = {};
+		hdr_metadata.sType = VK_STRUCTURE_TYPE_HDR_METADATA_EXT;
+		hdr_metadata.displayPrimaryRed = VkXYColorEXT{ 0.708f, 0.292f };
+		hdr_metadata.displayPrimaryGreen = VkXYColorEXT{ 0.170f, 0.797f };
+		hdr_metadata.displayPrimaryBlue = VkXYColorEXT{ 0.131f, 0.046f };
+		hdr_metadata.whitePoint = VkXYColorEXT{ 0.3127f, 0.3290f };
+		hdr_metadata.maxLuminance = 1000.0f;
+		hdr_metadata.minLuminance = 0.0f;
+		hdr_metadata.maxContentLightLevel = 1000.0f;
+		hdr_metadata.maxFrameAverageLightLevel = 400.0f;
+		vkSetHdrMetadataEXT(Vk.Device, 1, &Vk.Swapchain, &hdr_metadata);
+	}
 
     VK(vkGetSwapchainImagesKHR(Vk.Device, Vk.Swapchain, &Vk.SwapchainImageCount, NULL));
     std::vector<VkImage> swapchain_images(Vk.SwapchainImageCount);
@@ -180,6 +230,8 @@ static void CreateSwapchain(uint32_t width, uint32_t height, uint32_t image_coun
         Vk.UploadBufferTails[i] = 0;
     }
 
+	Vk.UploadBufferHead = 0;
+
     Vk.FrameIndexCurr = 0;
     Vk.FrameIndexNext = (Vk.FrameIndexCurr + 1) % Vk.SwapchainImageCount;
 }
@@ -196,8 +248,6 @@ static void DestroySwapchain()
 
         vkDestroyImageView(Vk.Device, Vk.SwapchainImageViews[i], NULL);
     }
-
-    vkDestroySwapchainKHR(Vk.Device, Vk.Swapchain, NULL);
 }
 
 void VkInitialize(const VkInitializeParams& params)
@@ -402,40 +452,93 @@ void VkInitialize(const VkInitializeParams& params)
     std::vector<VkExtensionProperties> device_extension_properties(device_extension_properties_count);
     VK(vkEnumerateDeviceExtensionProperties(Vk.PhysicalDevice, NULL, &device_extension_properties_count, device_extension_properties.data()));
 
-    std::vector<const char*> ray_tracing_extensions =
-    {
-        VK_KHR_RAY_TRACING_EXTENSION_NAME,
-        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
-        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-        VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
-        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
-    };
+	// Check if HDR display modes are supported
+	{
+		std::vector<const char*> hdr_display_extensions =
+		{
+			 VK_EXT_HDR_METADATA_EXTENSION_NAME,
+		};
 
-    Vk.IsRayTracingSupported = true;
-    for (size_t i = 0; i < ray_tracing_extensions.size(); ++i)
-    {
-        bool is_extension_supported = false;
-        for (uint32_t j = 0; j < device_extension_properties_count; ++j)
-        {
-            if (strcmp(device_extension_properties[j].extensionName, ray_tracing_extensions[i]) == 0)
-            {
-                is_extension_supported = true;
-                break;
-            }
-        }
-        if (!is_extension_supported)
-        {
-            Vk.IsRayTracingSupported = false;
-            break;
-        }
-    }
-    if (Vk.IsRayTracingSupported)
-    {
-        for (size_t i = 0; i < ray_tracing_extensions.size(); ++i)
-        {
-            device_extensions.push_back(ray_tracing_extensions[i]);
-        }
-    }
+		bool is_hdr_display_supported = true;
+		for (size_t i = 0; i < hdr_display_extensions.size(); ++i)
+		{
+			bool is_extension_supported = false;
+			for (uint32_t j = 0; j < device_extension_properties_count; ++j)
+			{
+				if (strcmp(device_extension_properties[j].extensionName, hdr_display_extensions[i]) == 0)
+				{
+					is_extension_supported = true;
+					break;
+				}
+			}
+			if (!is_extension_supported)
+			{
+				is_hdr_display_supported = false;
+				break;
+			}
+		}
+		if (is_hdr_display_supported)
+		{
+			for (size_t i = 0; i < hdr_display_extensions.size(); ++i)
+			{
+				device_extensions.push_back(hdr_display_extensions[i]);
+			}
+		}
+
+		uint32_t surface_format_count = 0;
+		VK(vkGetPhysicalDeviceSurfaceFormatsKHR(Vk.PhysicalDevice, Vk.Surface, &surface_format_count, NULL));
+		std::vector<VkSurfaceFormatKHR> surface_formats(surface_format_count);
+		VK(vkGetPhysicalDeviceSurfaceFormatsKHR(Vk.PhysicalDevice, Vk.Surface, &surface_format_count, surface_formats.data()));
+
+		memset(Vk.IsDisplayModeSupported, 0, sizeof(Vk.IsDisplayModeSupported));
+		for (uint32_t i = 0; i < surface_format_count; ++i)
+		{
+			Vk.IsDisplayModeSupported[VK_DISPLAY_MODE_SDR] |= ((surface_formats[i].format == VK_FORMAT_R8G8B8A8_UNORM || surface_formats[i].format == VK_FORMAT_B8G8R8A8_UNORM) && surface_formats[i].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+			if (is_hdr_display_supported)
+			{
+				Vk.IsDisplayModeSupported[VK_DISPLAY_MODE_HDR10] |= ((surface_formats[i].format == VK_FORMAT_A2R10G10B10_UNORM_PACK32 || surface_formats[i].format == VK_FORMAT_A2B10G10R10_UNORM_PACK32) && surface_formats[i].colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT);
+				Vk.IsDisplayModeSupported[VK_DISPLAY_MODE_SCRGB] |= ((surface_formats[i].format == VK_FORMAT_R16G16B16A16_SFLOAT) && surface_formats[i].colorSpace == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT);
+			}
+		}
+	}
+
+	// Check if ray tracing is supported
+	{
+		Vk.IsRayTracingSupported = true;
+
+		std::vector<const char*> ray_tracing_extensions =
+		{
+			VK_KHR_RAY_TRACING_EXTENSION_NAME,
+			VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+			VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+			VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
+			VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+		};
+		for (size_t i = 0; i < ray_tracing_extensions.size(); ++i)
+		{
+			bool is_extension_supported = false;
+			for (uint32_t j = 0; j < device_extension_properties_count; ++j)
+			{
+				if (strcmp(device_extension_properties[j].extensionName, ray_tracing_extensions[i]) == 0)
+				{
+					is_extension_supported = true;
+					break;
+				}
+			}
+			if (!is_extension_supported)
+			{
+				Vk.IsRayTracingSupported = false;
+				break;
+			}
+		}
+		if (Vk.IsRayTracingSupported)
+		{
+			for (size_t i = 0; i < ray_tracing_extensions.size(); ++i)
+			{
+				device_extensions.push_back(ray_tracing_extensions[i]);
+			}
+		}
+	}
 
 	const float queue_priority = 1.0f;
 	VkDeviceQueueCreateInfo queue_info = {};
@@ -506,9 +609,9 @@ void VkInitialize(const VkInitializeParams& params)
 	Vk.UploadBufferMemory = allocation_info.deviceMemory;
 	Vk.UploadBufferMemoryOffset = allocation_info.offset;
 	Vk.UploadBufferMappedData = (uint8_t*)allocation_info.pMappedData;
-	Vk.UploadBufferHead = 0;
 
-    CreateSwapchain(params.BackBufferWidth, params.BackBufferHeight, params.DesiredBackBufferCount);
+	Vk.Swapchain = VK_NULL_HANDLE;
+    CreateSwapchain(params.BackBufferWidth, params.BackBufferHeight, params.DesiredBackBufferCount, params.DisplayMode);
 
 	VkQueryPoolCreateInfo timestamp_query_pool_info = {};
 	timestamp_query_pool_info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
@@ -519,7 +622,8 @@ void VkInitialize(const VkInitializeParams& params)
 }
 void VkTerminate()
 {
-    DestroySwapchain();
+	DestroySwapchain();
+	vkDestroySwapchainKHR(Vk.Device, Vk.Swapchain, NULL);
     
 	vkDestroyQueryPool(Vk.Device, Vk.TimestampQueryPool, NULL);
 	vmaDestroyBuffer(Vk.Allocator, Vk.UploadBuffer, Vk.UploadBufferAllocation);
@@ -534,10 +638,10 @@ void VkTerminate()
 	vkDestroyInstance(Vk.Instance, NULL);
 }
 
-void VkResize(uint32_t width, uint32_t height)
+void VkResize(uint32_t width, uint32_t height, VkDisplayMode display_mode)
 {
-    DestroySwapchain();
-    CreateSwapchain(width, height, Vk.SwapchainImageCount);
+	DestroySwapchain();
+    CreateSwapchain(width, height, Vk.SwapchainImageCount, display_mode);
 }
 
 VkAllocation VkAllocateUploadBuffer(VkDeviceSize size, VkDeviceSize alignment)

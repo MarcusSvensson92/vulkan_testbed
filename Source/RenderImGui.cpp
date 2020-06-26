@@ -121,8 +121,8 @@ void RenderImGui::Create(const RenderContext& rc, GLFWwindow* window)
 	blend_attachment_state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 	blend_attachment_state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 	blend_attachment_state.colorBlendOp = VK_BLEND_OP_ADD;
-	blend_attachment_state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	blend_attachment_state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	blend_attachment_state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	blend_attachment_state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 	blend_attachment_state.alphaBlendOp = VK_BLEND_OP_ADD;
 	blend_attachment_state.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
@@ -138,7 +138,7 @@ void RenderImGui::Create(const RenderContext& rc, GLFWwindow* window)
 		{ 2, 0, VK_FORMAT_R8G8B8A8_UNORM, IM_OFFSETOF(ImDrawVert, col) },
 	};
 	pipeline_params.PipelineLayout = m_PipelineLayout;
-	pipeline_params.RenderPass = rc.BackBufferRenderPass;
+	pipeline_params.RenderPass = rc.UiRenderPass;
 	pipeline_params.VertexShaderFilepath = "../Assets/Shaders/ImGui.vert";
 	pipeline_params.FragmentShaderFilepath = "../Assets/Shaders/ImGui.frag";
 	pipeline_params.BlendAttachmentStates = { blend_attachment_state };
@@ -368,14 +368,28 @@ void RenderImGui::Draw(const RenderContext& rc, VkCommandBuffer cmd)
 
     VkRenderPassBeginInfo render_pass_info = {};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = rc.BackBufferRenderPass;
-    render_pass_info.framebuffer = rc.BackBufferFramebuffers[Vk.SwapchainImageIndex];
+    render_pass_info.renderPass = rc.UiRenderPass;
+    render_pass_info.framebuffer = rc.UiFramebuffer;
     render_pass_info.renderArea.offset = { 0, 0 };
-    render_pass_info.renderArea.extent = { Vk.SwapchainImageExtent.width, Vk.SwapchainImageExtent.height };
+    render_pass_info.renderArea.extent = { rc.Width, rc.Height };
     vkCmdBeginRenderPass(cmd, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 
     VkViewport viewport = { 0.0f, 0.0f, draw_data->DisplaySize.x, draw_data->DisplaySize.y, 0.0f, 1.0f };
     vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+	VkClearRect clear_rect = {};
+	clear_rect.baseArrayLayer = 0;
+	clear_rect.layerCount = 1;
+	clear_rect.rect.offset.x = 0;
+	clear_rect.rect.offset.y = 0;
+	clear_rect.rect.extent.width = rc.Width;
+	clear_rect.rect.extent.height = rc.Height;
+
+	VkClearAttachment clear_attachments[] =
+	{
+		{ VK_IMAGE_ASPECT_COLOR_BIT, 0, { 0.0f, 0.0f, 0.0f, 0.0f } },
+	};
+	vkCmdClearAttachments(cmd, static_cast<uint32_t>(sizeof(clear_attachments) / sizeof(*clear_attachments)), clear_attachments, 1, &clear_rect);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline);
 

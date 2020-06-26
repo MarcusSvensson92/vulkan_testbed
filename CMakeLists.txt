@@ -66,6 +66,9 @@ include_directories("${CMAKE_CURRENT_SOURCE_DIR}/External/imgui/")
 # Add stb
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/External/stb/")
 
+# Add tinyexr
+include_directories("${CMAKE_CURRENT_SOURCE_DIR}/External/tinyexr/")
+
 # Add volk
 add_library(volk STATIC
             "${CMAKE_CURRENT_SOURCE_DIR}/External/volk/volk.c")

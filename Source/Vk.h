@@ -33,6 +33,14 @@ inline T VkAlignUp(T value, T alignment)
 	return (value + alignment - 1) / alignment * alignment;
 }
 
+enum VkDisplayMode
+{
+	VK_DISPLAY_MODE_SDR = 0,
+	VK_DISPLAY_MODE_HDR10,
+	VK_DISPLAY_MODE_SCRGB,
+	VK_DISPLAY_MODE_COUNT,
+};
+
 struct _Vk
 {
 	VkInstance												Instance;
@@ -43,6 +51,9 @@ struct _Vk
 
 	VkPhysicalDevice										PhysicalDevice;
 	VkPhysicalDeviceProperties								PhysicalDeviceProperties;
+
+	VkDisplayMode											DisplayMode;
+	bool													IsDisplayModeSupported[VK_DISPLAY_MODE_COUNT];
 
 	bool													IsRayTracingSupported;
 
@@ -98,12 +109,13 @@ struct VkInitializeParams
 	uint32_t												BackBufferWidth;
 	uint32_t												BackBufferHeight;
 	uint32_t												DesiredBackBufferCount;
+	VkDisplayMode											DisplayMode;
 	bool													EnableValidationLayer;
 };
 void														VkInitialize(const VkInitializeParams& params);
 void														VkTerminate();
 
-void														VkResize(uint32_t width, uint32_t height);
+void														VkResize(uint32_t width, uint32_t height, VkDisplayMode display_mode);
 
 struct VkAllocation
 {

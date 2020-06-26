@@ -29,4 +29,5 @@ struct VkTextureCreateParams
 };
 VkTexture				VkTextureCreate(const VkTextureCreateParams& params);
 VkTexture				VkTextureLoad(const char* filepath, bool srgb);
+VkTexture				VkTextureLoadEXR(const char* filepath);
 void					VkTextureDestroy(const VkTexture& texture);

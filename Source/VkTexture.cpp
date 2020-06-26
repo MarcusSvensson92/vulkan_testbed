@@ -3,6 +3,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#define TINYEXR_IMPLEMENTATION
+#include <tinyexr.h>
+
 static VkImageAspectFlags ToVkImageAspectMask(VkFormat format)
 {
     switch (format)
@@ -268,6 +271,41 @@ VkTexture VkTextureLoad(const char* filepath, bool srgb)
     stbi_image_free(data);
 
     return texture;
+}
+VkTexture VkTextureLoadEXR(const char* filepath)
+{
+	float* data;
+	int width, height;
+	const char* error = nullptr;
+	if (LoadEXR(&data, &width, &height, filepath, &error) != TINYEXR_SUCCESS)
+	{
+		if (error != nullptr)
+		{
+			VkError(error);
+			FreeEXRErrorMessage(error);
+		}
+		return {};
+	}
+
+	VkDeviceSize data_size = width * height * 16;
+	VkAllocation allocation = VkAllocateUploadBuffer(data_size);
+	memcpy(allocation.Data, data, data_size);
+
+	VkTextureCreateParams params;
+	params.Type = VK_IMAGE_TYPE_2D;
+	params.ViewType = VK_IMAGE_VIEW_TYPE_2D;
+	params.Width = static_cast<uint32_t>(width);
+	params.Height = static_cast<uint32_t>(height);
+	params.Format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	params.Usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
+	params.InitialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	params.Data = data;
+	params.DataSize = data_size;
+	VkTexture texture = VkTextureCreate(params);
+
+	free(data);
+
+	return texture;
 }
 void VkTextureDestroy(const VkTexture& texture)
 {

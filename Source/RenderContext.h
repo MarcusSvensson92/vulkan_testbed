@@ -8,18 +8,21 @@ struct RenderContext
 {
 	VkTexture                   ColorTexture;
 	VkTexture                   DepthTexture;
+	VkTexture					UiTexture;
 	VkTexture					NormalTexture;
 	VkTexture					MotionTexture;
 	VkTexture					AmbientOcclusionTexture;
 	VkTexture                   ShadowTexture;
 	VkTexture					LinearDepthTextures[2];
 
-    VkRenderPass                DepthRenderPass;
     VkRenderPass                ColorRenderPass;
+	VkRenderPass                DepthRenderPass;
+	VkRenderPass				UiRenderPass;
     VkRenderPass                BackBufferRenderPass;
 
-    VkFramebuffer               DepthFramebuffers[2];
     VkFramebuffer               ColorFramebuffer;
+	VkFramebuffer               DepthFramebuffers[2];
+	VkFramebuffer				UiFramebuffer;
 	std::vector<VkFramebuffer>  BackBufferFramebuffers;
 
     VkSampler                   NearestClamp;

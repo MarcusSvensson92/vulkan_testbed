@@ -53,6 +53,8 @@ void RenderPostProcess::Create(const RenderContext& rc)
         {
             { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
             { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
+			{ 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
+			{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
         };
         VkDescriptorSetLayoutCreateInfo set_layout_info = {};
         set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -67,24 +69,7 @@ void RenderPostProcess::Create(const RenderContext& rc)
         VK(vkCreatePipelineLayout(Vk.Device, &pipeline_layout_info, NULL, &m_ToneMappingPipelineLayout));
     }
 
-	// Debug
-	{
-		VkDescriptorSetLayoutBinding set_layout_bindings[] =
-		{
-			{ 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
-		};
-		VkDescriptorSetLayoutCreateInfo set_layout_info = {};
-		set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		set_layout_info.bindingCount = static_cast<uint32_t>(sizeof(set_layout_bindings) / sizeof(*set_layout_bindings));
-		set_layout_info.pBindings = set_layout_bindings;
-		VK(vkCreateDescriptorSetLayout(Vk.Device, &set_layout_info, NULL, &m_DebugDescriptorSetLayout));
-
-		VkPipelineLayoutCreateInfo pipeline_layout_info = {};
-		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipeline_layout_info.setLayoutCount = 1;
-		pipeline_layout_info.pSetLayouts = &m_DebugDescriptorSetLayout;
-		VK(vkCreatePipelineLayout(Vk.Device, &pipeline_layout_info, NULL, &m_DebugPipelineLayout));
-	}
+	m_LuxoDoubleChecker = VkTextureLoadEXR("../Assets/Textures/LuxoDoubleChecker.exr");
 
 	CreatePipelines(rc);
 	CreateResolutionDependentResources(rc);
@@ -95,6 +80,8 @@ void RenderPostProcess::Destroy()
 	DestroyResolutionDependentResources();
 	DestroyPipelines();
 
+	VkTextureDestroy(m_LuxoDoubleChecker);
+
     vkDestroyPipelineLayout(Vk.Device, m_TemporalBlendPipelineLayout, NULL);
     vkDestroyDescriptorSetLayout(Vk.Device, m_TemporalBlendDescriptorSetLayout, NULL);
 
@@ -103,9 +90,6 @@ void RenderPostProcess::Destroy()
 
     vkDestroyPipelineLayout(Vk.Device, m_ToneMappingPipelineLayout, NULL);
     vkDestroyDescriptorSetLayout(Vk.Device, m_ToneMappingDescriptorSetLayout, NULL);
-
-	vkDestroyPipelineLayout(Vk.Device, m_DebugPipelineLayout, NULL);
-	vkDestroyDescriptorSetLayout(Vk.Device, m_DebugDescriptorSetLayout, NULL);
 }
 
 void RenderPostProcess::CreatePipelines(const RenderContext& rc)
@@ -136,17 +120,6 @@ void RenderPostProcess::CreatePipelines(const RenderContext& rc)
 		pipeline_params.BlendAttachmentStates = { VkUtilGetDefaultBlendAttachmentState() };
 		m_ToneMappingPipeline = VkUtilCreateGraphicsPipeline(pipeline_params);
 	}
-
-	// Debug
-	{
-		VkUtilCreateGraphicsPipelineParams pipeline_params;
-		pipeline_params.PipelineLayout = m_DebugPipelineLayout;
-		pipeline_params.RenderPass = rc.BackBufferRenderPass;
-		pipeline_params.VertexShaderFilepath = "../Assets/Shaders/PostProcessDebug.vert";
-		pipeline_params.FragmentShaderFilepath = "../Assets/Shaders/PostProcessDebug.frag";
-		pipeline_params.BlendAttachmentStates = { VkUtilGetDefaultBlendAttachmentState() };
-		m_DebugPipeline = VkUtilCreateGraphicsPipeline(pipeline_params);
-	}
 }
 
 void RenderPostProcess::DestroyPipelines()
@@ -154,7 +127,6 @@ void RenderPostProcess::DestroyPipelines()
 	vkDestroyPipeline(Vk.Device, m_TemporalBlendPipeline, NULL);
 	vkDestroyPipeline(Vk.Device, m_TemporalResolvePipeline, NULL);
 	vkDestroyPipeline(Vk.Device, m_ToneMappingPipeline, NULL);
-	vkDestroyPipeline(Vk.Device, m_DebugPipeline, NULL);
 }
 
 void RenderPostProcess::CreateResolutionDependentResources(const RenderContext& rc)
@@ -233,7 +205,7 @@ void RenderPostProcess::Draw(const RenderContext& rc, VkCommandBuffer cmd)
             VkAllocation constants_allocation = VkAllocateUploadBuffer(sizeof(Constants));
             Constants* constants = reinterpret_cast<Constants*>(constants_allocation.Data);
 			constants->IsHistValid = is_hist_valid;
-			constants->Exposure = m_Exposure;
+			constants->Exposure = std::exp2f(m_Exposure);
 
             VkDescriptorSet set = VkCreateDescriptorSetForCurrentFrame(m_TemporalBlendDescriptorSetLayout,
                 {
@@ -276,7 +248,8 @@ void RenderPostProcess::Draw(const RenderContext& rc, VkCommandBuffer cmd)
         VkUtilImageBarrier(cmd, rc.ColorTexture.Image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 
-	if (!rc.DebugEnable)
+	VkUtilImageBarrier(cmd, rc.UiTexture.Image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+
     {
 		VkPushLabel(cmd, "Post Process Tone Mapping");
 
@@ -297,16 +270,42 @@ void RenderPostProcess::Draw(const RenderContext& rc, VkCommandBuffer cmd)
 
         struct Constants
         {
-            float   Exposure;
+			float		Exposure;
+			uint32_t	DebugEnable;
+			uint32_t	ViewLuxoDoubleChecker;
+			int32_t		DisplayMode;
+			int32_t		DisplayMapping;
+			int32_t		DisplayMappingAux;
+			uint32_t	DisplayMappingSplitScreen;
+			int32_t		DisplayMappingSplitScreenOffset;
+			float		HdrDisplayLuminanceMin;
+			float		HdrDisplayLuminanceMax;
+			float		SdrWhiteLevel;
+			float		ACESMidPoint;
+			float		BT2390MidPoint;
         };
         VkAllocation constants_allocation = VkAllocateUploadBuffer(sizeof(Constants));
         Constants* constants = reinterpret_cast<Constants*>(constants_allocation.Data);
-        constants->Exposure = m_Exposure;
+		constants->Exposure = std::exp2f(m_Exposure);
+		constants->DebugEnable = rc.DebugEnable;
+		constants->ViewLuxoDoubleChecker = m_ViewLuxoDoubleChecker;
+		constants->DisplayMode = static_cast<int32_t>(Vk.DisplayMode);
+		constants->DisplayMapping = m_DisplayMapping;
+		constants->DisplayMappingAux = m_DisplayMappingAux;
+		constants->DisplayMappingSplitScreen = m_DisplayMappingSplitScreen;
+		constants->DisplayMappingSplitScreenOffset = static_cast<int32_t>((m_DisplayMappingSplitScreenOffset * 0.5f + 0.5f) * static_cast<float>(rc.Width) + 0.5f);
+		constants->HdrDisplayLuminanceMin = m_HdrDisplayLuminanceMin;
+		constants->HdrDisplayLuminanceMax = m_HdrDisplayLuminanceMax;
+		constants->SdrWhiteLevel = m_SdrWhiteLevel;
+		constants->ACESMidPoint = m_ACESMidPoint;
+		constants->BT2390MidPoint = m_BT2390MidPoint;
 
         VkDescriptorSet set = VkCreateDescriptorSetForCurrentFrame(m_ToneMappingDescriptorSetLayout,
             {
                 { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, constants_allocation.Buffer, constants_allocation.Offset, sizeof(Constants) },
-                { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.ColorTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp }
+                { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.ColorTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
+				{ 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.UiTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
+				{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, m_LuxoDoubleChecker.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.LinearClamp },
             });
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_ToneMappingPipelineLayout, 0, 1, &set, 0, NULL);
 
@@ -317,33 +316,6 @@ void RenderPostProcess::Draw(const RenderContext& rc, VkCommandBuffer cmd)
 		VkPopLabel(cmd);
     }
 
-	if (rc.DebugEnable)
-	{
-		VkRenderPassBeginInfo render_pass_info = {};
-		render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		render_pass_info.renderPass = rc.BackBufferRenderPass;
-		render_pass_info.framebuffer = rc.BackBufferFramebuffers[Vk.SwapchainImageIndex];
-		render_pass_info.renderArea.offset = { 0, 0 };
-		render_pass_info.renderArea.extent = { rc.Width, rc.Height };
-		vkCmdBeginRenderPass(cmd, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-
-		VkViewport viewport = { 0.0f, 0.0f, static_cast<float>(rc.Width), static_cast<float>(rc.Height), 0.0f, 1.0f };
-		VkRect2D scissor = { { 0, 0 }, { rc.Width, rc.Height } };
-		vkCmdSetViewport(cmd, 0, 1, &viewport);
-		vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DebugPipeline);
-
-		VkDescriptorSet set = VkCreateDescriptorSetForCurrentFrame(m_DebugDescriptorSetLayout,
-			{
-				{ 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.ColorTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp }
-			});
-		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_DebugPipelineLayout, 0, 1, &set, 0, NULL);
-
-		vkCmdDraw(cmd, 3, 1, 0, 0);
-
-		vkCmdEndRenderPass(cmd);
-	}
-
 	VkUtilImageBarrier(cmd, rc.ColorTexture.Image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkUtilImageBarrier(cmd, rc.UiTexture.Image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
 }

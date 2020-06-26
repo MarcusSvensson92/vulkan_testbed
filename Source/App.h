@@ -20,9 +20,10 @@ class App
 {
 public:
 	GLFWwindow*				m_Window;
-	uint32_t				m_WindowWidth;
-	uint32_t				m_WindowHeight;
-	bool					m_WindowMinimized;
+	uint32_t				m_Width;
+	uint32_t				m_Height;
+	bool					m_Minimized;
+	VkDisplayMode			m_DisplayMode;
 
 	RenderContext			m_RenderContext;
 

@@ -12,13 +12,13 @@
 void App::ResizeCallback(GLFWwindow* window, int width, int height)
 {
 	App* app = static_cast<App*>(glfwGetWindowUserPointer(window));
-	app->m_WindowWidth = static_cast<uint32_t>(width);
-	app->m_WindowHeight = static_cast<uint32_t>(height);
+	app->m_Width = static_cast<uint32_t>(width);
+	app->m_Height = static_cast<uint32_t>(height);
 }
 void App::MinimizeCallback(GLFWwindow* window, int minimized)
 {
 	App* app = static_cast<App*>(glfwGetWindowUserPointer(window));
-	app->m_WindowMinimized = minimized == GLFW_TRUE;
+	app->m_Minimized = minimized == GLFW_TRUE;
 }
 
 void App::Initialize(uint32_t width, uint32_t height, const char* title)
@@ -27,9 +27,10 @@ void App::Initialize(uint32_t width, uint32_t height, const char* title)
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 	m_Window = glfwCreateWindow(width, height, title, NULL, NULL);
 
-	m_WindowWidth = width;
-	m_WindowHeight = height;
-	m_WindowMinimized = false;
+	m_Width = width;
+	m_Height = height;
+	m_Minimized = false;
+	m_DisplayMode = VK_DISPLAY_MODE_SDR;
 
 	glfwSetWindowUserPointer(m_Window, this);
 	glfwSetWindowSizeCallback(m_Window, ResizeCallback);
@@ -46,22 +47,23 @@ void App::Initialize(uint32_t width, uint32_t height, const char* title)
 	vk_params.BackBufferWidth = width;
 	vk_params.BackBufferHeight = height;
 	vk_params.DesiredBackBufferCount = 2;
+	vk_params.DisplayMode = m_DisplayMode;
 	vk_params.EnableValidationLayer = false;
 	VkInitialize(vk_params);
+
+	VkUtilCreateRenderPassParams color_render_pass_params;
+	color_render_pass_params.ColorAttachmentFormats = { VK_FORMAT_B10G11R11_UFLOAT_PACK32 };
+	color_render_pass_params.DepthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+	m_RenderContext.ColorRenderPass = VkUtilCreateRenderPass(color_render_pass_params);
 
     VkUtilCreateRenderPassParams depth_render_pass_params;
 	depth_render_pass_params.ColorAttachmentFormats = { VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R16G16_UNORM };
 	depth_render_pass_params.DepthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
 	m_RenderContext.DepthRenderPass = VkUtilCreateRenderPass(depth_render_pass_params);
 
-    VkUtilCreateRenderPassParams color_render_pass_params;
-	color_render_pass_params.ColorAttachmentFormats = { VK_FORMAT_B10G11R11_UFLOAT_PACK32 };
-	color_render_pass_params.DepthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
-	m_RenderContext.ColorRenderPass = VkUtilCreateRenderPass(color_render_pass_params);
-
-    VkUtilCreateRenderPassParams back_buffer_render_pass_params;
-	back_buffer_render_pass_params.ColorAttachmentFormats = { Vk.SwapchainSurfaceFormat.format };
-	m_RenderContext.BackBufferRenderPass = VkUtilCreateRenderPass(back_buffer_render_pass_params);
+	VkUtilCreateRenderPassParams ui_render_pass_params;
+	ui_render_pass_params.ColorAttachmentFormats = { VK_FORMAT_R8G8B8A8_UNORM };
+	m_RenderContext.UiRenderPass = VkUtilCreateRenderPass(ui_render_pass_params);
 
 	CreateResolutionDependentResources(width, height);
 
@@ -212,9 +214,9 @@ void App::Terminate()
 
 	DestroyResolutionDependentResources();
 
+	vkDestroyRenderPass(Vk.Device, m_RenderContext.ColorRenderPass, NULL);
     vkDestroyRenderPass(Vk.Device, m_RenderContext.DepthRenderPass, NULL);
-    vkDestroyRenderPass(Vk.Device, m_RenderContext.ColorRenderPass, NULL);
-    vkDestroyRenderPass(Vk.Device, m_RenderContext.BackBufferRenderPass, NULL);
+	vkDestroyRenderPass(Vk.Device, m_RenderContext.UiRenderPass, NULL);
 
 	VkTerminate();
 
@@ -243,6 +245,16 @@ void App::CreateResolutionDependentResources(uint32_t width, uint32_t height)
     depth_texture_params.Usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     depth_texture_params.InitialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	m_RenderContext.DepthTexture = VkTextureCreate(depth_texture_params);
+
+	VkTextureCreateParams ui_texture_params;
+	ui_texture_params.Type = VK_IMAGE_TYPE_2D;
+	ui_texture_params.ViewType = VK_IMAGE_VIEW_TYPE_2D;
+	ui_texture_params.Width = width;
+	ui_texture_params.Height = height;
+	ui_texture_params.Format = VK_FORMAT_R8G8B8A8_UNORM;
+	ui_texture_params.Usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	ui_texture_params.InitialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	m_RenderContext.UiTexture = VkTextureCreate(ui_texture_params);
 
 	VkTextureCreateParams normal_texture_params;
 	normal_texture_params.Type = VK_IMAGE_TYPE_2D;
@@ -300,6 +312,14 @@ void App::CreateResolutionDependentResources(uint32_t width, uint32_t height)
 	m_RenderContext.LinearDepthTextures[0] = VkTextureCreate(linear_depth_texture_params);
 	m_RenderContext.LinearDepthTextures[1] = VkTextureCreate(linear_depth_texture_params);
 
+	VkUtilCreateFramebufferParams color_framebuffer_params;
+	color_framebuffer_params.RenderPass = m_RenderContext.ColorRenderPass;
+	color_framebuffer_params.ColorAttachments = { m_RenderContext.ColorTexture.ImageView };
+	color_framebuffer_params.DepthAttachment = m_RenderContext.DepthTexture.ImageView;
+	color_framebuffer_params.Width = width;
+	color_framebuffer_params.Height = height;
+	m_RenderContext.ColorFramebuffer = VkUtilCreateFramebuffer(color_framebuffer_params);
+
 	for (uint32_t i = 0; i < 2; ++i)
 	{
 		VkUtilCreateFramebufferParams depth_framebuffer_params;
@@ -311,13 +331,16 @@ void App::CreateResolutionDependentResources(uint32_t width, uint32_t height)
 		m_RenderContext.DepthFramebuffers[i] = VkUtilCreateFramebuffer(depth_framebuffer_params);
 	}
 
-    VkUtilCreateFramebufferParams color_framebuffer_params;
-    color_framebuffer_params.RenderPass = m_RenderContext.ColorRenderPass;
-    color_framebuffer_params.ColorAttachments = { m_RenderContext.ColorTexture.ImageView };
-    color_framebuffer_params.DepthAttachment = m_RenderContext.DepthTexture.ImageView;
-    color_framebuffer_params.Width = width;
-    color_framebuffer_params.Height = height;
-	m_RenderContext.ColorFramebuffer = VkUtilCreateFramebuffer(color_framebuffer_params);
+	VkUtilCreateFramebufferParams ui_framebuffer_params;
+	ui_framebuffer_params.RenderPass = m_RenderContext.UiRenderPass;
+	ui_framebuffer_params.ColorAttachments = { m_RenderContext.UiTexture.ImageView };
+	ui_framebuffer_params.Width = width;
+	ui_framebuffer_params.Height = height;
+	m_RenderContext.UiFramebuffer = VkUtilCreateFramebuffer(ui_framebuffer_params);
+
+	VkUtilCreateRenderPassParams back_buffer_render_pass_params;
+	back_buffer_render_pass_params.ColorAttachmentFormats = { Vk.SwapchainSurfaceFormat.format };
+	m_RenderContext.BackBufferRenderPass = VkUtilCreateRenderPass(back_buffer_render_pass_params);
 
 	m_RenderContext.BackBufferFramebuffers.resize(Vk.SwapchainImageCount);
     for (uint32_t i = 0; i < Vk.SwapchainImageCount; ++i)
@@ -341,16 +364,20 @@ void App::CreateResolutionDependentResources(uint32_t width, uint32_t height)
 
 void App::DestroyResolutionDependentResources()
 {
+	vkDestroyFramebuffer(Vk.Device, m_RenderContext.ColorFramebuffer, NULL);
 	vkDestroyFramebuffer(Vk.Device, m_RenderContext.DepthFramebuffers[0], NULL);
 	vkDestroyFramebuffer(Vk.Device, m_RenderContext.DepthFramebuffers[1], NULL);
-	vkDestroyFramebuffer(Vk.Device, m_RenderContext.ColorFramebuffer, NULL);
+	vkDestroyFramebuffer(Vk.Device, m_RenderContext.UiFramebuffer, NULL);
 	for (VkFramebuffer framebuffer : m_RenderContext.BackBufferFramebuffers)
 	{
 		vkDestroyFramebuffer(Vk.Device, framebuffer, NULL);
 	}
 
+	vkDestroyRenderPass(Vk.Device, m_RenderContext.BackBufferRenderPass, NULL);
+
 	VkTextureDestroy(m_RenderContext.ColorTexture);
 	VkTextureDestroy(m_RenderContext.DepthTexture);
+	VkTextureDestroy(m_RenderContext.UiTexture);
 	VkTextureDestroy(m_RenderContext.NormalTexture);
 	VkTextureDestroy(m_RenderContext.MotionTexture);
 	VkTextureDestroy(m_RenderContext.AmbientOcclusionTexture);
@@ -367,24 +394,23 @@ void App::Run()
 	{
 		glfwPollEvents();
 
-		if (m_WindowMinimized || m_WindowWidth == 0 || m_WindowHeight == 0)
+		if (m_Minimized || m_Width == 0 || m_Height == 0)
 			continue;
 
-		if (m_WindowWidth != m_RenderContext.Width || m_WindowHeight != m_RenderContext.Height)
+		if (m_Width != m_RenderContext.Width || m_Height != m_RenderContext.Height || m_DisplayMode != Vk.DisplayMode)
 		{
 			vkDeviceWaitIdle(Vk.Device);
 
-			VkResize(m_WindowWidth, m_WindowHeight);
+			VkResize(m_Width, m_Height, m_DisplayMode);
 
 			DestroyResolutionDependentResources();
-			CreateResolutionDependentResources(m_WindowWidth, m_WindowHeight);
-
-			m_RenderContext.Width = m_WindowWidth;
-			m_RenderContext.Height = m_WindowHeight;
+			CreateResolutionDependentResources(m_Width, m_Height);
 
 			m_RenderSSAO.RecreateResolutionDependentResources(m_RenderContext);
 			m_RenderShadows.RecreateResolutionDependentResources(m_RenderContext);
 			m_RenderPostProcess.RecreateResolutionDependentResources(m_RenderContext);
+
+			m_RenderPostProcess.RecreatePipelines(m_RenderContext);
 		}
 
 		if (glfwGetKey(m_Window, GLFW_KEY_F5) == GLFW_PRESS)
@@ -458,7 +484,67 @@ void App::Run()
 			if (ImGui::CollapsingHeader("Post Process"))
 			{
 				ImGui::Checkbox("Temporal AA", &m_RenderPostProcess.m_TemporalAAEnable);
-				ImGui::InputFloat("Exposure", &m_RenderPostProcess.m_Exposure);
+				ImGui::SliderFloat("Exposure", &m_RenderPostProcess.m_Exposure, -8.0f, 4.0f);
+			}
+			if (ImGui::CollapsingHeader("Display"))
+			{
+				const char* display_mode_names[] = { "SDR", "HDR10", "scRGB" };
+				if (ImGui::BeginCombo("Display Mode", display_mode_names[m_DisplayMode]))
+				{
+					for (uint32_t display_mode = 0; display_mode < VK_DISPLAY_MODE_COUNT; ++display_mode)
+					{
+						if (Vk.IsDisplayModeSupported[display_mode])
+						{
+							bool is_selected = m_DisplayMode == display_mode;
+							if (ImGui::Selectable(display_mode_names[display_mode], is_selected))
+								m_DisplayMode = static_cast<VkDisplayMode>(display_mode);
+							if (is_selected)
+								ImGui::SetItemDefaultFocus();
+						}
+					}
+					ImGui::EndCombo();
+				}
+
+				ImGui::Checkbox("View Luxo Double Checker", &m_RenderPostProcess.m_ViewLuxoDoubleChecker);
+
+				if (Vk.DisplayMode == VK_DISPLAY_MODE_HDR10 || Vk.DisplayMode == VK_DISPLAY_MODE_SCRGB)
+				{
+					const char* display_mapping_names[] = { "ACES ODT", "BT2390 EETF", "SDR Emulation", "Luminance Visualization Scene", "Luminance Visualization Display" };
+					if (ImGui::BeginCombo("Display Mapping", display_mapping_names[m_RenderPostProcess.m_DisplayMapping]))
+					{
+						for (uint32_t display_mapping = 0; display_mapping < RenderPostProcess::DISPLAY_MAPPING_COUNT; ++display_mapping)
+						{
+							bool is_selected = m_RenderPostProcess.m_DisplayMapping == display_mapping;
+							if (ImGui::Selectable(display_mapping_names[display_mapping], is_selected))
+								m_RenderPostProcess.m_DisplayMapping = static_cast<RenderPostProcess::DisplayMapping>(display_mapping);
+							if (is_selected)
+								ImGui::SetItemDefaultFocus();
+						}
+						ImGui::EndCombo();
+					}
+					if (ImGui::BeginCombo("Display Mapping Aux", display_mapping_names[m_RenderPostProcess.m_DisplayMappingAux]))
+					{
+						for (uint32_t display_mapping = 0; display_mapping < RenderPostProcess::DISPLAY_MAPPING_COUNT; ++display_mapping)
+						{
+							bool is_selected = m_RenderPostProcess.m_DisplayMappingAux == display_mapping;
+							if (ImGui::Selectable(display_mapping_names[display_mapping], is_selected))
+								m_RenderPostProcess.m_DisplayMappingAux = static_cast<RenderPostProcess::DisplayMapping>(display_mapping);
+							if (is_selected)
+								ImGui::SetItemDefaultFocus();
+						}
+						ImGui::EndCombo();
+					}
+					ImGui::Checkbox("Display Mapping Split Screen", &m_RenderPostProcess.m_DisplayMappingSplitScreen);
+					ImGui::SliderFloat("Display Mapping Split Screen Offset", &m_RenderPostProcess.m_DisplayMappingSplitScreenOffset, -1.0f, 1.0f);
+
+					ImGui::SliderFloat("Display Min Point", &m_RenderPostProcess.m_HdrDisplayLuminanceMin, 0.001f, 0.1f, "%.3f");
+					ImGui::SliderFloat("Display Max Point", &m_RenderPostProcess.m_HdrDisplayLuminanceMax, 400.0f, 1000.0f, "%.0f");
+
+					ImGui::SliderFloat("SDR White Level", &m_RenderPostProcess.m_SdrWhiteLevel, 100.0f, 400.0f, "%.0f");
+
+					ImGui::SliderFloat("ACES Mid Point", &m_RenderPostProcess.m_ACESMidPoint, 1.0f, 100.0f, "%.1f");
+					ImGui::SliderFloat("BT2390 Mid Point", &m_RenderPostProcess.m_BT2390MidPoint, 1.0f, 100.0f, "%.1f");
+				}
 			}
 			if (ImGui::CollapsingHeader("Debug"))
 			{
@@ -523,11 +609,11 @@ void App::Run()
 			// Draw sky
 			m_RenderAtmosphere.DrawSky(m_RenderContext, cmd);
 
-			// Post effects
-			m_RenderPostProcess.Draw(m_RenderContext, cmd);
-
 			// Draw ImGui
 			m_RenderImGui.Draw(m_RenderContext, cmd);
+
+			// Post effects
+			m_RenderPostProcess.Draw(m_RenderContext, cmd);
 
 			VkEndFrame();
 		}

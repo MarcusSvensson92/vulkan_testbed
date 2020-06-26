@@ -79,10 +79,21 @@ vec3 xyY_2_XYZ(vec3 xyY)
 	return XYZ;
 }
 
+vec3 moncurve_f(vec3 x, float gamma, float offs)
+{
+	const float fs = ((gamma - 1.0) / offs) * pow(offs * gamma / ((gamma - 1.0) * (1.0 + offs)), gamma);
+	const float xb = offs / (gamma - 1.0);
+
+	vec3 y;
+	y.x = (x.x >= xb) ? (pow((x.x + offs) / (1.0 + offs), gamma)) : (x.x * fs);
+	y.y = (x.y >= xb) ? (pow((x.y + offs) / (1.0 + offs), gamma)) : (x.y * fs);
+	y.z = (x.z >= xb) ? (pow((x.z + offs) / (1.0 + offs), gamma)) : (x.z * fs);
+	return y;
+}
 vec3 moncurve_r(vec3 y, float gamma, float offs)
 {
-	float yb = pow(offs * gamma / ((gamma - 1.0) * (1.0 + offs)), gamma);
-	float rs = pow((gamma - 1.0) / offs, gamma - 1.0) * pow((1.0 + offs) / gamma, gamma);
+	const float yb = pow(offs * gamma / ((gamma - 1.0) * (1.0 + offs)), gamma);
+	const float rs = pow((gamma - 1.0) / offs, gamma - 1.0) * pow((1.0 + offs) / gamma, gamma);
 
 	vec3 x;
 	x.x = (y.x >= yb) ? ((1.0 + offs) * pow(y.x, 1.0 / gamma) - offs) : (y.x * rs);
@@ -91,14 +102,47 @@ vec3 moncurve_r(vec3 y, float gamma, float offs)
 	return x;
 }
 
+vec3 bt1886_f(vec3 V, float gamma, float Lw, float Lb)
+{
+  const float a = pow(pow(Lw, 1.0 / gamma) - pow(Lb, 1.0 / gamma), gamma);
+  const float b = pow(Lb, 1.0 / gamma) / (pow(Lw, 1.0 / gamma) - pow(Lb, 1.0 / gamma));
+  vec3 L = a * pow(max(V + b, 0.0), vec3(gamma));
+  return L;
+}
 vec3 bt1886_r(vec3 L, float gamma, float Lw, float Lb)
 {
-	float a = pow(pow(Lw, 1.0 / gamma) - pow(Lb, 1.0 / gamma), gamma);
-	float b = pow(Lb, 1.0 / gamma) / (pow(Lw, 1.0 / gamma) - pow(Lb, 1.0 / gamma));
+	const float a = pow(pow(Lw, 1.0 / gamma) - pow(Lb, 1.0 / gamma), gamma);
+	const float b = pow(Lb, 1.0 / gamma) / (pow(Lw, 1.0 / gamma) - pow(Lb, 1.0 / gamma));
 	vec3 V = pow(max(L / a, 0.0), vec3(1.0 / gamma)) - b;
 	return V;
 }
 
+float ST2084_2_Y(float N)
+{
+	float Np = pow(N, 1.0 / 78.84375);
+	float L = Np - 0.8359375;
+	L = max(L, 0.0);
+	L = L / (18.8515625 - 18.6875 * Np);
+	L = pow(L, 1.0 / 0.1593017578125);
+	return L * 10000.0;
+}
+float Y_2_ST2084(float C)
+{
+	float L = C / 10000.0;
+	float Lm = pow(L, 0.1593017578125);
+	float N = (0.8359375 + 18.8515625 * Lm) / (1.0 + 18.6875 * Lm);
+	N = pow(N, 78.84375);
+	return N;
+}
+vec3 ST2084_2_Y(vec3 N)
+{
+	vec3 Np = pow(N, vec3(1.0 / 78.84375));
+	vec3 L = Np - 0.8359375;
+	L = max(L, 0.0);
+	L = L / (18.8515625 - 18.6875 * Np);
+	L = pow(L, vec3(1.0 / 0.1593017578125));
+	return L * 10000.0;
+}
 vec3 Y_2_ST2084(vec3 C)
 {
 	vec3 L = C / 10000.0;
@@ -236,8 +280,6 @@ vec3 rrt_sweeteners(vec3 aces)
 // https://github.com/ampas/aces-dev/blob/v1.2/transforms/ctl/lib/ACESlib.ODT_Common.ctl
 
 const float DIM_SURROUND_GAMMA = 0.9811;
-
-const float ODT_SAT_FACTOR = 0.93;
 
 vec3 Y_2_linCV(vec3 Y, float Ymax, float Ymin)
 {
