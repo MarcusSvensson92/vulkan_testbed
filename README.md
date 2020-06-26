@@ -2,7 +2,7 @@
 
 A pet project for experimenting with various graphics techniques in Vulkan.
 
-![screenshot](https://user-images.githubusercontent.com/3328360/79633451-f3315d00-8165-11ea-862e-92b08bf630f4.png)
+![screenshot](https://user-images.githubusercontent.com/3328360/85896810-7374de00-b7f9-11ea-8915-0d2eee155284.png)
 
 ## Features
 * PBR lighting with glTF 2.0 models
@@ -10,6 +10,7 @@ A pet project for experimenting with various graphics techniques in Vulkan.
 * Atmospheric scattering
 * SSAO (HBAO)
 * TAA
+* HDR display support (HDR10 and scRGB)
 
 ## Build Instructions
 
