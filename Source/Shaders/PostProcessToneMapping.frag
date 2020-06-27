@@ -20,6 +20,10 @@ layout(location = 0) out vec4 OutColor;
 layout(binding = 0) uniform Constants
 {
     float	Exposure;
+	float	Saturation;
+	float	Contrast;
+	float	Gamma;
+	float	GamutExpansion;
 	bool	DebugEnable;
 	bool	ViewLuxoDoubleChecker;
 	int		DisplayMode;
@@ -158,9 +162,44 @@ void main()
 		// Apply exposure
 		color_rec709 *= Exposure;
 
-		// REC709 -> AP0
-		const mat3 REC709_2_AP0_MAT = REC709_2_XYZ_MAT * D65_2_D60_MAT * XYZ_2_AP0_MAT;
-		vec3 color_ap0 = color_rec709 * REC709_2_AP0_MAT;
+		// REC709 -> AP1
+		const mat3 REC709_2_AP1_MAT = REC709_2_XYZ_MAT * D65_2_D60_MAT * XYZ_2_AP1_MAT;
+		vec3 color_ap1 = color_rec709 * REC709_2_AP1_MAT;
+
+		// Gamut expansion
+		{
+			// Calculate expanded color by pretending it is in P3-DCI (which is wider than REC709)
+			const mat3 P3DCI_2_XYZ_MAT = mat3(
+				 0.486578792, 0.265665293, 0.198211923,
+				 0.228978887, 0.691737354, 0.079283647,
+				-0.000000173, 0.045115903, 1.043942570
+			);
+			const mat3 P3DCI_2_AP1_MAT = P3DCI_2_XYZ_MAT * D65_2_D60_MAT * XYZ_2_AP1_MAT;
+			vec3 color_ap1_expanded = color_rec709 * P3DCI_2_AP1_MAT;
+
+			// Expand bright saturated colors
+			float max_color = max(color_rec709.r, max(color_rec709.g, color_rec709.b));
+			float min_color = min(color_rec709.r, min(color_rec709.g, color_rec709.b));
+			float brightness = max_color;
+			float saturation = (max_color - min_color) / max(max_color + min_color, 1e-6);
+			float expand_amount = clamp(brightness * saturation * GamutExpansion, 0.0, 1.0);
+			color_ap1 = color_ap1 * (1.0 - expand_amount) + color_ap1_expanded * expand_amount;
+		}
+
+		// Color correction
+		{
+			// Saturation
+			color_ap1 = max(vec3(0.0), mix(dot(color_ap1, AP1_2_XYZ_MAT[1]).xxx, color_ap1, Saturation));
+
+			// Contrast
+			color_ap1 = pow(color_ap1 * (1.0 / 0.18), vec3(Contrast)) * 0.18;
+
+			// Gamma
+			color_ap1 = pow(color_ap1, vec3(1.0 / Gamma));
+		}
+
+		// AP1 -> AP0
+		vec3 color_ap0 = color_ap1 * AP1_2_AP0_MAT;
 
 		int display_mapping = DisplayMapping;
 		if (DisplayMappingSplitScreen && int(gl_FragCoord.x) > DisplayMappingSplitScreenOffset)
@@ -169,7 +208,7 @@ void main()
 		if (DisplayMode == DISPLAY_MODE_SDR)
 		{
 			const mat3 AP1_2_REC709_MAT = AP1_2_XYZ_MAT * D60_2_D65_MAT * XYZ_2_REC709_MAT;
-			OutColor.rgb = outputTransform(color_ap0, 0.02, 4.8, 48.0, AP1_2_REC709_MAT, 1, 1);
+			OutColor.rgb = outputTransform(color_ap0, 0.02, 4.8, 48.0, AP1_2_REC709_MAT, 2, 1);
 		}
 		else
 		{
@@ -209,8 +248,8 @@ void main()
 				// Quantize as 8-bit unorm
 				OutColor.rgb = round(OutColor.rgb * 255.0) / 255.0;
 
-				// BT1886 -> Linear
-				OutColor.rgb = bt1886_f(OutColor.rgb, 2.4, 1.0, 0.0);
+				// sRGB -> Linear
+				OutColor.rgb = moncurve_f(OutColor.rgb, 2.4, 0.055);
 
 				// REC709 -> REC2020
 				const mat3 REC709_2_REC2020_MAT = REC709_2_XYZ_MAT * XYZ_2_REC2020_MAT;

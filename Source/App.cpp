@@ -485,6 +485,11 @@ void App::Run()
 			{
 				ImGui::Checkbox("Temporal AA", &m_RenderPostProcess.m_TemporalAAEnable);
 				ImGui::SliderFloat("Exposure", &m_RenderPostProcess.m_Exposure, -8.0f, 4.0f);
+				ImGui::SliderFloat("Saturation", &m_RenderPostProcess.m_Saturation, 0.5f, 1.5f);
+				ImGui::SliderFloat("Contrast", &m_RenderPostProcess.m_Contrast, 0.5f, 1.5f);
+				ImGui::SliderFloat("Gamma", &m_RenderPostProcess.m_Gamma, 0.5f, 1.5f);
+				ImGui::SliderFloat("Gamut Expansion", &m_RenderPostProcess.m_GamutExpansion, 0.0f, 4.0f);
+				ImGui::Checkbox("View Luxo Double Checker", &m_RenderPostProcess.m_ViewLuxoDoubleChecker);
 			}
 			if (ImGui::CollapsingHeader("Display"))
 			{
@@ -504,8 +509,6 @@ void App::Run()
 					}
 					ImGui::EndCombo();
 				}
-
-				ImGui::Checkbox("View Luxo Double Checker", &m_RenderPostProcess.m_ViewLuxoDoubleChecker);
 
 				if (Vk.DisplayMode == VK_DISPLAY_MODE_HDR10 || Vk.DisplayMode == VK_DISPLAY_MODE_SCRGB)
 				{

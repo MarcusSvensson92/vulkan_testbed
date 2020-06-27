@@ -271,6 +271,10 @@ void RenderPostProcess::Draw(const RenderContext& rc, VkCommandBuffer cmd)
         struct Constants
         {
 			float		Exposure;
+			float		Saturation;
+			float		Contrast;
+			float		Gamma;
+			float		GamutExpansion;
 			uint32_t	DebugEnable;
 			uint32_t	ViewLuxoDoubleChecker;
 			int32_t		DisplayMode;
@@ -287,6 +291,10 @@ void RenderPostProcess::Draw(const RenderContext& rc, VkCommandBuffer cmd)
         VkAllocation constants_allocation = VkAllocateUploadBuffer(sizeof(Constants));
         Constants* constants = reinterpret_cast<Constants*>(constants_allocation.Data);
 		constants->Exposure = std::exp2f(m_Exposure);
+		constants->Saturation = m_Saturation;
+		constants->Contrast = m_Contrast;
+		constants->Gamma = m_Gamma;
+		constants->GamutExpansion = m_GamutExpansion;
 		constants->DebugEnable = rc.DebugEnable;
 		constants->ViewLuxoDoubleChecker = m_ViewLuxoDoubleChecker;
 		constants->DisplayMode = static_cast<int32_t>(Vk.DisplayMode);

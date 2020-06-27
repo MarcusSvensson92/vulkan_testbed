@@ -25,6 +25,11 @@ public:
 
     float                   m_Exposure                              = 0.5f;
 
+	float					m_Saturation							= 1.1f;
+	float					m_Contrast								= 1.0f;
+	float					m_Gamma									= 1.2f;
+	float					m_GamutExpansion						= 2.0f;
+
 	enum DisplayMapping
 	{
 		DISPLAY_MAPPING_ACES_ODT = 0,
