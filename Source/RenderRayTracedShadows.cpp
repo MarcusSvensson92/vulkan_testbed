@@ -147,8 +147,8 @@ void RenderRayTracedShadows::Create(const RenderContext& rc)
 		VK(vkCreatePipelineLayout(Vk.Device, &pipeline_layout_info, NULL, &m_ClearPipelineLayout));
 	}
 
-	VkPhysicalDeviceRayTracingPropertiesKHR ray_tracing_properties = {};
-	ray_tracing_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PROPERTIES_KHR;
+	VkPhysicalDeviceRayTracingPipelinePropertiesKHR ray_tracing_properties = {};
+	ray_tracing_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
 
 	VkPhysicalDeviceProperties2KHR physical_device_properties = {};
 	physical_device_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2_KHR;
@@ -161,12 +161,13 @@ void RenderRayTracedShadows::Create(const RenderContext& rc)
 	VkBufferCreateInfo buffer_create_info = {};
 	buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	buffer_create_info.size = static_cast<VkDeviceSize>(m_ShaderGroupHandleAlignedSize) * 3;
-	buffer_create_info.usage = VK_BUFFER_USAGE_RAY_TRACING_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+	buffer_create_info.usage = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 	VmaAllocationCreateInfo buffer_allocation_create_info = {};
 	buffer_allocation_create_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 	VK(vmaCreateBuffer(Vk.Allocator, &buffer_create_info, &buffer_allocation_create_info, &m_ShaderBindingTableBuffer, &m_ShaderBindingTableBufferAllocation, NULL));
+	m_ShaderBindingTableBufferDeviceAddress = VkUtilGetDeviceAddress(m_ShaderBindingTableBuffer);
 
 	CreatePipelines(rc);
 	CreateResolutionDependentResources(rc);
@@ -266,9 +267,7 @@ void RenderRayTracedShadows::CreatePipelines(const RenderContext& rc)
 		pipeline_info.pStages = shader_stages;
 		pipeline_info.groupCount = static_cast<uint32_t>(sizeof(shader_groups) / sizeof(VkRayTracingShaderGroupCreateInfoKHR));
 		pipeline_info.pGroups = shader_groups;
-		pipeline_info.maxRecursionDepth = 1;
-		pipeline_info.libraries.sType = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR;
-		VK(vkCreateRayTracingPipelinesKHR(Vk.Device, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &m_RayTracePipeline));
+		VK(vkCreateRayTracingPipelinesKHR(Vk.Device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipeline_info, NULL, &m_RayTracePipeline));
 
 		vkDestroyShaderModule(Vk.Device, rgen_shader, NULL);
 		vkDestroyShaderModule(Vk.Device, rmiss_shader, NULL);
@@ -488,24 +487,20 @@ void RenderRayTracedShadows::RayTrace(const RenderContext& rc, VkCommandBuffer c
 		};
 		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_RayTracePipelineLayout, 0, sizeof(sets) / sizeof(*sets), sets, 0, NULL);
 
-		VkStridedBufferRegionKHR raygen_shader_binding_table;
-		raygen_shader_binding_table.buffer = m_ShaderBindingTableBuffer;
-		raygen_shader_binding_table.offset = 0;
-		raygen_shader_binding_table.stride = 0;
+		VkStridedDeviceAddressRegionKHR raygen_shader_binding_table;
+		raygen_shader_binding_table.deviceAddress = m_ShaderBindingTableBufferDeviceAddress;
+		raygen_shader_binding_table.stride = m_ShaderGroupHandleSize;
 		raygen_shader_binding_table.size = m_ShaderGroupHandleSize;
-		VkStridedBufferRegionKHR miss_shader_binding_table;
-		miss_shader_binding_table.buffer = m_ShaderBindingTableBuffer;
-		miss_shader_binding_table.offset = m_ShaderGroupHandleAlignedSize;
-		miss_shader_binding_table.stride = 0;
+		VkStridedDeviceAddressRegionKHR miss_shader_binding_table;
+		miss_shader_binding_table.deviceAddress = m_ShaderBindingTableBufferDeviceAddress + m_ShaderGroupHandleAlignedSize;
+		miss_shader_binding_table.stride = m_ShaderGroupHandleSize;
 		miss_shader_binding_table.size = m_ShaderGroupHandleSize;
-		VkStridedBufferRegionKHR hit_shader_binding_table;
-		hit_shader_binding_table.buffer = m_ShaderBindingTableBuffer;
-		hit_shader_binding_table.offset = m_ShaderGroupHandleAlignedSize * 2;
-		hit_shader_binding_table.stride = 0;
+		VkStridedDeviceAddressRegionKHR hit_shader_binding_table;
+		hit_shader_binding_table.deviceAddress = m_ShaderBindingTableBufferDeviceAddress + m_ShaderGroupHandleAlignedSize * 2;
+		hit_shader_binding_table.stride = m_ShaderGroupHandleSize;
 		hit_shader_binding_table.size = m_ShaderGroupHandleSize;
-		VkStridedBufferRegionKHR callable_shader_binding_table;
-		callable_shader_binding_table.buffer = VK_NULL_HANDLE;
-		callable_shader_binding_table.offset = 0;
+		VkStridedDeviceAddressRegionKHR callable_shader_binding_table;
+		callable_shader_binding_table.deviceAddress = VK_NULL_HANDLE;
 		callable_shader_binding_table.stride = 0;
 		callable_shader_binding_table.size = 0;
 		vkCmdTraceRaysKHR(cmd, &raygen_shader_binding_table, &miss_shader_binding_table, &hit_shader_binding_table, &callable_shader_binding_table, rc.Width, rc.Height, 1);

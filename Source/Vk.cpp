@@ -268,7 +268,7 @@ void VkInitialize(const VkInitializeParams& params)
 	{
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME
 	};
-	const char* validation_layer = "VK_LAYER_LUNARG_standard_validation";
+	const char* validation_layer = "VK_LAYER_KHRONOS_validation";
 
 	uint32_t instance_extension_properties_count = 0;
 	VK(vkEnumerateInstanceExtensionProperties(NULL, &instance_extension_properties_count, NULL));
@@ -508,7 +508,8 @@ void VkInitialize(const VkInitializeParams& params)
 
 		std::vector<const char*> ray_tracing_extensions =
 		{
-			VK_KHR_RAY_TRACING_EXTENSION_NAME,
+			VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+			VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
 			VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 			VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
 			VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
@@ -555,16 +556,22 @@ void VkInitialize(const VkInitializeParams& params)
 	device_vulkan_1_2_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
 	device_vulkan_1_2_features.bufferDeviceAddress = VK_TRUE;
 	device_vulkan_1_2_features.runtimeDescriptorArray = VK_TRUE;
+	device_vulkan_1_2_features.descriptorIndexing = VK_TRUE;
 	device_vulkan_1_2_features.descriptorBindingPartiallyBound = VK_TRUE;
 
-	VkPhysicalDeviceRayTracingFeaturesKHR device_ray_tracing_features = {};
-	device_ray_tracing_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_FEATURES_KHR;
-	device_ray_tracing_features.pNext = &device_vulkan_1_2_features;
-	device_ray_tracing_features.rayTracing = VK_TRUE;
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR device_acceleration_structure_features = {};
+	device_acceleration_structure_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+	device_acceleration_structure_features.pNext = &device_vulkan_1_2_features;
+	device_acceleration_structure_features.accelerationStructure = VK_TRUE;
+
+	VkPhysicalDeviceRayTracingPipelineFeaturesKHR device_ray_tracing_pipeline_features = {};
+	device_ray_tracing_pipeline_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+	device_ray_tracing_pipeline_features.pNext = &device_acceleration_structure_features;
+	device_ray_tracing_pipeline_features.rayTracingPipeline = VK_TRUE;
 
 	VkDeviceCreateInfo device_info = {};
 	device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    device_info.pNext = Vk.IsRayTracingSupported ? &device_ray_tracing_features : NULL;
+    device_info.pNext = Vk.IsRayTracingSupported ? &device_ray_tracing_pipeline_features : NULL;
 	device_info.queueCreateInfoCount = 1;
 	device_info.pQueueCreateInfos = &queue_info;
     device_info.enabledExtensionCount = static_cast<uint32_t>(device_extensions.size());
@@ -591,6 +598,7 @@ void VkInitialize(const VkInitializeParams& params)
 	allocator_info.flags = VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT | (Vk.IsRayTracingSupported ? VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT : 0);
 	allocator_info.physicalDevice = Vk.PhysicalDevice;
 	allocator_info.device = Vk.Device;
+	allocator_info.instance = Vk.Instance;
 	allocator_info.pAllocationCallbacks = NULL;
 	VK(vmaCreateAllocator(&allocator_info, &Vk.Allocator));
 

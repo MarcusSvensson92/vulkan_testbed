@@ -40,7 +40,7 @@ void main()
 	// TODO: Proper mip level calculation
 	float alpha = textureLod(BaseColorTextures[instance.TextureIndex], tex_coord, 0.0).a;
 	if (alpha < 0.5)
-		ignoreIntersectionEXT();
+		ignoreIntersectionEXT;
 	else
-		terminateRayEXT();
+		terminateRayEXT;
 }
