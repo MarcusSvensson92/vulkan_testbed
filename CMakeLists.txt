@@ -60,6 +60,7 @@ add_library(imgui STATIC
             "${CMAKE_CURRENT_SOURCE_DIR}/External/imgui/imgui.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/External/imgui/imgui_demo.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/External/imgui/imgui_draw.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/External/imgui/imgui_tables.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/External/imgui/imgui_widgets.cpp")
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/External/imgui/")
 
@@ -96,12 +97,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Bin")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/Bin")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/Bin")
 
-# Add defines
-add_definitions(-DVK_ENABLE_BETA_EXTENSIONS)
-
 # Add platform-specific defines
 if(WIN32)
-    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -D_CRT_SECURE_NO_WARNINGS)
+    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -D_CRT_SECURE_NO_WARNINGS -DNOMINMAX)
 elseif(UNIX)
     add_definitions(-DVK_USE_PLATFORM_XLIB_KHR)
 else()
