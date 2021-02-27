@@ -22,6 +22,37 @@ float Min4(vec4 v)
 	return min(min(v.x, v.y), min(v.z, v.w));
 }
 
+// http://vec3.ca/bicubic-filtering-in-fewer-taps/
+vec3 BicubicFilter(sampler2D tex, vec2 uv, ivec2 size)
+{
+	vec2 pos = uv * vec2(size);
+
+	vec2 tc = floor(pos - 0.5) + 0.5;
+	vec2 f = pos - tc;
+	vec2 f2 = f * f;
+	vec2 f3 = f * f2;
+
+	vec2 w0 = f2 - 0.5 * (f3 + f);
+	vec2 w1 = 1.5 * f3 - 2.5 * f2 + 1;
+	vec2 w3 = 0.5 * (f3 - f2);
+	vec2 w2 = 1.0 - w0 - w1 - w3;
+	vec2 w12 = w1 + w2;
+
+	vec2 inv_size = vec2(1.0) / vec2(size);
+
+	vec2 t0 = (tc - 1.0) * inv_size;
+	vec2 t1 = (tc + w2 / w12) * inv_size;
+	vec2 t2 = (tc + 2.0) * inv_size;
+
+	vec4 samples =
+		vec4(texture(tex, vec2(t1.x, t0.y), 0).rgb, 1.0) * (w12.x *  w0.y) +
+		vec4(texture(tex, vec2(t0.x, t1.y), 0).rgb, 1.0) * ( w0.x * w12.y) +
+		vec4(texture(tex, vec2(t1.x, t1.y), 0).rgb, 1.0) * (w12.x * w12.y) +
+		vec4(texture(tex, vec2(t2.x, t1.y), 0).rgb, 1.0) * ( w3.x * w12.y) +
+		vec4(texture(tex, vec2(t1.x, t2.y), 0).rgb, 1.0) * (w12.x *  w3.y);
+	return samples.rgb / samples.a;
+}
+
 layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 void main()
 {
@@ -55,7 +86,7 @@ void main()
 		vec3 motion = texelFetch(Motion, coord + closest_offset, 0).xyz;
 
 		vec2 prev_tex_coord = ((vec2(gl_GlobalInvocationID.xy) + 0.5) / vec2(size)) + motion.xy;
-		temporal_color = texture(Temporal, prev_tex_coord).rgb;
+		temporal_color = BicubicFilter(Temporal, prev_tex_coord, size).rgb;
 		temporal_weight = Min4(textureGather(Temporal, prev_tex_coord, 3));
 
 		float velocity_weight_xy = clamp(1.0 - length(motion.xy * vec2(size)) * (1.0 / 128.0), 0.0, 1.0);
