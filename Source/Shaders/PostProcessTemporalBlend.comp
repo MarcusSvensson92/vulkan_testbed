@@ -45,11 +45,11 @@ vec3 BicubicFilter(sampler2D tex, vec2 uv, ivec2 size)
 	vec2 t2 = (tc + 2.0) * inv_size;
 
 	vec4 samples =
-		vec4(texture(tex, vec2(t1.x, t0.y), 0).rgb, 1.0) * (w12.x *  w0.y) +
-		vec4(texture(tex, vec2(t0.x, t1.y), 0).rgb, 1.0) * ( w0.x * w12.y) +
-		vec4(texture(tex, vec2(t1.x, t1.y), 0).rgb, 1.0) * (w12.x * w12.y) +
-		vec4(texture(tex, vec2(t2.x, t1.y), 0).rgb, 1.0) * ( w3.x * w12.y) +
-		vec4(texture(tex, vec2(t1.x, t2.y), 0).rgb, 1.0) * (w12.x *  w3.y);
+		vec4(texture(tex, vec2(t1.x, t0.y)).rgb, 1.0) * (w12.x *  w0.y) +
+		vec4(texture(tex, vec2(t0.x, t1.y)).rgb, 1.0) * ( w0.x * w12.y) +
+		vec4(texture(tex, vec2(t1.x, t1.y)).rgb, 1.0) * (w12.x * w12.y) +
+		vec4(texture(tex, vec2(t2.x, t1.y)).rgb, 1.0) * ( w3.x * w12.y) +
+		vec4(texture(tex, vec2(t1.x, t2.y)).rgb, 1.0) * (w12.x *  w3.y);
 	return samples.rgb / samples.a;
 }
 
