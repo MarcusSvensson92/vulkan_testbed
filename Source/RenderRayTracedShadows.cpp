@@ -128,25 +128,6 @@ void RenderRayTracedShadows::Create(const RenderContext& rc)
 		VK(vkCreatePipelineLayout(Vk.Device, &pipeline_layout_info, NULL, &m_ResolvePipelineLayout));
 	}
 
-	// Clear
-	{
-		VkDescriptorSetLayoutBinding set_layout_bindings[] =
-		{
-			{ 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, NULL },
-		};
-		VkDescriptorSetLayoutCreateInfo set_layout_info = {};
-		set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		set_layout_info.bindingCount = static_cast<uint32_t>(sizeof(set_layout_bindings) / sizeof(*set_layout_bindings));
-		set_layout_info.pBindings = set_layout_bindings;
-		VK(vkCreateDescriptorSetLayout(Vk.Device, &set_layout_info, NULL, &m_ClearDescriptorSetLayout));
-
-		VkPipelineLayoutCreateInfo pipeline_layout_info = {};
-		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipeline_layout_info.setLayoutCount = 1;
-		pipeline_layout_info.pSetLayouts = &m_ClearDescriptorSetLayout;
-		VK(vkCreatePipelineLayout(Vk.Device, &pipeline_layout_info, NULL, &m_ClearPipelineLayout));
-	}
-
 	VkPhysicalDeviceRayTracingPipelinePropertiesKHR ray_tracing_properties = {};
 	ray_tracing_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
 
@@ -197,9 +178,6 @@ void RenderRayTracedShadows::Destroy()
 
 	vkDestroyPipelineLayout(Vk.Device, m_ResolvePipelineLayout, NULL);
 	vkDestroyDescriptorSetLayout(Vk.Device, m_ResolveDescriptorSetLayout, NULL);
-
-	vkDestroyPipelineLayout(Vk.Device, m_ClearPipelineLayout, NULL);
-	vkDestroyDescriptorSetLayout(Vk.Device, m_ClearDescriptorSetLayout, NULL);
 }
 
 void RenderRayTracedShadows::CreatePipelines(const RenderContext& rc)
@@ -336,14 +314,6 @@ void RenderRayTracedShadows::CreatePipelines(const RenderContext& rc)
 		pipeline_params.ComputeShaderFilepath = "../Assets/Shaders/ShadowsResolve.comp";
 		m_ResolvePipeline = VkUtilCreateComputePipeline(pipeline_params);
 	}
-
-	// Clear
-	{
-		VkUtilCreateComputePipelineParams pipeline_params;
-		pipeline_params.PipelineLayout = m_ClearPipelineLayout;
-		pipeline_params.ComputeShaderFilepath = "../Assets/Shaders/ShadowsClear.comp";
-		m_ClearPipeline = VkUtilCreateComputePipeline(pipeline_params);
-	}
 }
 
 void RenderRayTracedShadows::DestroyPipelines()
@@ -352,7 +322,6 @@ void RenderRayTracedShadows::DestroyPipelines()
 	vkDestroyPipeline(Vk.Device, m_ReprojectPipeline, NULL);
 	vkDestroyPipeline(Vk.Device, m_FilterPipeline, NULL);
 	vkDestroyPipeline(Vk.Device, m_ResolvePipeline, NULL);
-	vkDestroyPipeline(Vk.Device, m_ClearPipeline, NULL);
 }
 
 void RenderRayTracedShadows::CreateResolutionDependentResources(const RenderContext& rc)
@@ -412,32 +381,10 @@ void RenderRayTracedShadows::RecreateResolutionDependentResources(const RenderCo
 
 void RenderRayTracedShadows::RayTrace(const RenderContext& rc, VkCommandBuffer cmd, const AccelerationStructure& as)
 {
-	if (!Vk.IsRayTracingSupported)
+	if (!Vk.IsRayTracingSupported || !rc.EnableRayTracedShadows)
 	{
 		return;
 	}
-
-    if (!m_Enable)
-    {
-		VkUtilImageBarrier(cmd, rc.ShadowTexture.Image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
-
-		// Clear
-		{
-			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_ClearPipeline);
-
-			VkDescriptorSet set = VkCreateDescriptorSetForCurrentFrame(m_ClearDescriptorSetLayout,
-				{
-					{ 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, rc.ShadowTexture.ImageView, VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE },
-				});
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_ClearPipelineLayout, 0, 1, &set, 0, NULL);
-
-			vkCmdDispatch(cmd, (rc.Width + 7) / 8, (rc.Height + 7) / 8, 1);
-		}
-
-		VkUtilImageBarrier(cmd, rc.ShadowTexture.Image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
-
-        return;
-    }
 
 	VkUtilImageBarrier(cmd, rc.DepthTexture.Image, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
 	VkUtilImageBarrier(cmd, rc.ShadowTexture.Image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
@@ -578,7 +525,7 @@ void RenderRayTracedShadows::RayTrace(const RenderContext& rc, VkCommandBuffer c
 				};
 				VkAllocation constants_allocation = VkAllocateUploadBuffer(sizeof(Constants));
 				Constants* constants = reinterpret_cast<Constants*>(constants_allocation.Data);
-				constants->StepSize = 1 << i;
+				constants->StepSize = 1 << (m_FilterIterations - i - 1);
 				constants->PhiVariance = m_FilterPhiVariance;
 
 				VkDescriptorSet set = VkCreateDescriptorSetForCurrentFrame(m_FilterDescriptorSetLayout,

@@ -11,7 +11,8 @@ struct RenderContext
 	VkTexture					UiTexture;
 	VkTexture					NormalTexture;
 	VkTexture					MotionTexture;
-	VkTexture					AmbientOcclusionTexture;
+	VkTexture					ScreenSpaceAmbientOcclusionTexture;
+	VkTexture					RayTracedAmbientOcclusionTexture;
 	VkTexture                   ShadowTexture;
 	VkTexture					LinearDepthTextures[2];
 
@@ -41,6 +42,10 @@ struct RenderContext
 
     Camera                      CameraCurr;
 	Camera						CameraPrev;
+
+	bool						EnableScreenSpaceAmbientOcclusion;
+	bool						EnableRayTracedAmbientOcclusion;
+	bool						EnableRayTracedShadows;
 
     glm::vec3                   SunDirection;
 

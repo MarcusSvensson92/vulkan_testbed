@@ -27,7 +27,7 @@ public:
 
 	float					m_Saturation							= 1.1f;
 	float					m_Contrast								= 1.0f;
-	float					m_Gamma									= 1.2f;
+	float					m_Gamma									= 1.0f;
 	float					m_GamutExpansion						= 2.0f;
 
 	enum DisplayMapping
@@ -49,8 +49,8 @@ public:
 
 	float					m_SdrWhiteLevel							= 200.0f;
 
-	float					m_ACESMidPoint							= 25.0f;
-	float					m_BT2390MidPoint						= 25.0f;
+	float					m_ACESMidPoint							= 15.0f;
+	float					m_BT2390MidPoint						= 15.0f;
 
     void                    Create(const RenderContext& rc);
     void                    Destroy();

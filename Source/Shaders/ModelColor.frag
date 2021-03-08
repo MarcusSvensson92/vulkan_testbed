@@ -25,6 +25,9 @@ layout(binding = 0) uniform Constants
 	bool	HasBaseColorTexture;
 	bool	HasNormalTexture;
 	bool	HasMetallicRoughnessTexture;
+	bool	EnableScreenSpaceAmbientOcclusion;
+	bool	EnableRayTracedAmbientOcclusion;
+	bool	EnableRayTracedShadows;
 	bool	DebugEnable;
 	uint	DebugIndex;
 };
@@ -33,8 +36,9 @@ layout(binding = 2) uniform sampler2D Normal;
 layout(binding = 3) uniform sampler2D MetallicRoughness;
 layout(binding = 4) uniform sampler1D AmbientLightLUT;
 layout(binding = 5) uniform sampler1D DirectionalLightLUT;
-layout(binding = 6) uniform sampler2D AmbientOcclusion;
-layout(binding = 7) uniform sampler2D Shadow;
+layout(binding = 6) uniform sampler2D ScreenSpaceAmbientOcclusion;
+layout(binding = 7) uniform sampler2D RayTracedAmbientOcclusion;
+layout(binding = 8) uniform sampler2D Shadow;
 
 float MicrofacetDistribution(float n_dot_h, float roughness)
 {
@@ -103,10 +107,11 @@ void main()
 	vec3 dir_light = texture(DirectionalLightLUT, light_tex_coord).rgb * DirectionalLightIntensity;
 	vec3 ambient_light = texture(AmbientLightLUT, light_tex_coord).rgb * AmbientLightIntensity;
 
-	float shadow = texelFetch(Shadow, ivec2(gl_FragCoord.xy), 0).r;
-	float ao = texelFetch(AmbientOcclusion, ivec2(gl_FragCoord.xy), 0).r;
+	float ssao = EnableScreenSpaceAmbientOcclusion ? texelFetch(ScreenSpaceAmbientOcclusion, ivec2(gl_FragCoord.xy), 0).r : 1.0;
+	float ao = EnableRayTracedAmbientOcclusion ? texelFetch(RayTracedAmbientOcclusion, ivec2(gl_FragCoord.xy), 0).r : 1.0;
+	float shadow = EnableRayTracedShadows ? texelFetch(Shadow, ivec2(gl_FragCoord.xy), 0).r : 1.0;
 
-	OutColor = (diffuse + specular) * dir_light * n_dot_l * shadow + ambient_light * base_color.rgb * ao;
+	OutColor = (diffuse + specular) * dir_light * n_dot_l * shadow + ambient_light * base_color.rgb * (ao * ssao);
 
 	if (DebugEnable)
 	{
@@ -117,7 +122,8 @@ void main()
 		OutColor = DebugIndex == 4 ? vec3(d)			: OutColor;
 		OutColor = DebugIndex == 5 ? vec3(g)			: OutColor;
 		OutColor = DebugIndex == 6 ? vec3(f)			: OutColor;
-		OutColor = DebugIndex == 7 ? vec3(shadow)		: OutColor;
+		OutColor = DebugIndex == 7 ? vec3(ssao)			: OutColor;
 		OutColor = DebugIndex == 8 ? vec3(ao)			: OutColor;
+		OutColor = DebugIndex == 9 ? vec3(shadow)		: OutColor;
 	}
 }

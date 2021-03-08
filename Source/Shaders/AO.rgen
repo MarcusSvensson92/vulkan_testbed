@@ -1,0 +1,72 @@
+#version 460 core
+#extension GL_EXT_ray_tracing : enable
+
+#define PI 3.14159265
+
+layout(set = 0, binding = 0) uniform Constants
+{
+	mat4	InvViewProjZeroTranslation;
+	vec3	ViewPosition;
+	float   Radius;
+	float   Falloff;
+};
+layout(set = 0, binding = 1, r8) uniform image2D AO;
+layout(set = 0, binding = 2) uniform sampler2D Depth;
+layout(set = 0, binding = 3) uniform sampler2D Normal;
+layout(set = 0, binding = 4) uniform sampler2D BlueNoise;
+layout(set = 0, binding = 5) uniform accelerationStructureEXT AccelerationStructure;
+
+layout(location = 0) rayPayloadEXT float Payload;
+
+vec3 Perpendicular(vec3 v)
+{
+	vec3 a = abs(v);
+	uint x = ((a.x - a.y) < 0.0 && (a.x - a.z) < 0.0) ? 1u : 0u;
+	uint y = (a.y - a.z) < 0.0 ? (1u ^ x) : 0u;
+	uint z = 1u ^ (x | y);
+	return cross(v, vec3(x, y, z));
+}
+
+// http://www.pbr-book.org/3ed-2018/Monte_Carlo_Integration/2D_Sampling_with_Multidimensional_Transformations.html#UniformlySamplingaHemisphere
+vec3 UniformSampleHemisphere(vec2 u, vec3 z)
+{
+	float cos_theta = u.x;
+	float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+	float phi = (2.0 * PI) * u.y;
+	vec3 x = normalize(Perpendicular(z));
+	vec3 y = normalize(cross(x, z));
+	return normalize(cos(phi) * sin_theta * x + sin(phi) * sin_theta * y + cos_theta * z);
+}
+
+void main()
+{
+	float depth = texelFetch(Depth, ivec2(gl_LaunchIDEXT.xy), 0).r;
+
+	float ao = 1.0;
+	if (depth > 1e-6)
+	{
+		vec2 tex_coord = (vec2(gl_LaunchIDEXT.xy) + 0.5) / vec2(gl_LaunchSizeEXT.xy);
+		vec4 world_pos = InvViewProjZeroTranslation * vec4(tex_coord * 2.0 - 1.0, depth, 1.0);
+		world_pos.xyz /= world_pos.w;
+		world_pos.xyz += ViewPosition;
+
+		vec3 normal = normalize(texelFetch(Normal, ivec2(gl_LaunchIDEXT.xy), 0).rgb * 2.0 - 1.0);
+
+		float ao_sum = 0.0;
+
+		const uint num_rays = 2;
+		for (uint i = 0; i < num_rays; ++i)
+		{
+			uvec2 rand_coord = gl_LaunchIDEXT.xy + i * uvec2(43, 31);
+			vec2 rand = texelFetch(BlueNoise, ivec2(rand_coord & 127u), 0).rg;
+			vec3 ray_dir = UniformSampleHemisphere(rand, normal);
+
+			Payload = -1.0; // No hit
+			traceRayEXT(AccelerationStructure, gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsCullNoOpaqueEXT, 0xff, 0, 0, 0, world_pos.xyz, 1e-3, ray_dir, 1e3, 0);
+			ao_sum += (Payload < 0.0) ? 1.0 : pow(clamp(Payload / Radius, 0.0, 1.0), Falloff);
+		}
+
+		ao = ao_sum * (1.0 / float(num_rays));
+	}
+	imageStore(AO, ivec2(gl_LaunchIDEXT.xy), vec4(ao, 0.0, 0.0, 0.0));
+}

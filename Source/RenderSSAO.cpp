@@ -121,13 +121,18 @@ void RenderSSAO::RecreateResolutionDependentResources(const RenderContext& rc)
 
 void RenderSSAO::Generate(const RenderContext& rc, VkCommandBuffer cmd)
 {
+	if (!rc.EnableScreenSpaceAmbientOcclusion)
+	{
+		return;
+	}
+
 	{
 		VkPushLabel(cmd, "SSAO Generate");
 
 		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_GeneratePipeline);
 
 		VkUtilImageBarrier(cmd, rc.DepthTexture.Image, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
-		VkUtilImageBarrier(cmd, rc.AmbientOcclusionTexture.Image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
+		VkUtilImageBarrier(cmd, rc.ScreenSpaceAmbientOcclusionTexture.Image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
 
 		struct Constants
 		{
@@ -152,7 +157,7 @@ void RenderSSAO::Generate(const RenderContext& rc, VkCommandBuffer cmd)
 		VkDescriptorSet set = VkCreateDescriptorSetForCurrentFrame(m_GenerateDescriptorSetLayout,
 			{
 				{ 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, constants_allocation.Buffer, constants_allocation.Offset, sizeof(Constants) },
-				{ 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, rc.AmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE },
+				{ 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, rc.ScreenSpaceAmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE },
 				{ 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.DepthTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
 				{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.NormalTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
 				{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.BlueNoiseTextures[rc.FrameCounter % 8].ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
@@ -162,7 +167,7 @@ void RenderSSAO::Generate(const RenderContext& rc, VkCommandBuffer cmd)
 		vkCmdDispatch(cmd, (rc.Width + 7) / 8, (rc.Height + 7) / 8, 1);
 
 		VkUtilImageBarrier(cmd, rc.DepthTexture.Image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
-		VkUtilImageBarrier(cmd, rc.AmbientOcclusionTexture.Image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+		VkUtilImageBarrier(cmd, rc.ScreenSpaceAmbientOcclusionTexture.Image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
 
 		VkPopLabel(cmd);
 	}
@@ -188,7 +193,7 @@ void RenderSSAO::Generate(const RenderContext& rc, VkCommandBuffer cmd)
 				{
 					{ 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, constants_allocation.Buffer, constants_allocation.Offset, sizeof(Constants) },
 					{ 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, m_IntermediateTexture.ImageView, VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE },
-					{ 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.AmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
+					{ 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.ScreenSpaceAmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
 					{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.LinearDepthTextures[rc.FrameCounter & 1].ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
 				});
 			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_BlurPipelineLayout, 0, 1, &set, 0, NULL);
@@ -197,7 +202,7 @@ void RenderSSAO::Generate(const RenderContext& rc, VkCommandBuffer cmd)
 		}
 
 		VkUtilImageBarrier(cmd, m_IntermediateTexture.Image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
-		VkUtilImageBarrier(cmd, rc.AmbientOcclusionTexture.Image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
+		VkUtilImageBarrier(cmd, rc.ScreenSpaceAmbientOcclusionTexture.Image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT);
 
 		{
 			struct Constants
@@ -211,7 +216,7 @@ void RenderSSAO::Generate(const RenderContext& rc, VkCommandBuffer cmd)
 			VkDescriptorSet set = VkCreateDescriptorSetForCurrentFrame(m_BlurDescriptorSetLayout,
 				{
 					{ 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, constants_allocation.Buffer, constants_allocation.Offset, sizeof(Constants) },
-					{ 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, rc.AmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE },
+					{ 1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 0, rc.ScreenSpaceAmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_GENERAL, VK_NULL_HANDLE },
 					{ 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, m_IntermediateTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
 					{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.LinearDepthTextures[rc.FrameCounter & 1].ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
 				});
@@ -220,7 +225,7 @@ void RenderSSAO::Generate(const RenderContext& rc, VkCommandBuffer cmd)
 			vkCmdDispatch(cmd, (rc.Width + 7) / 8, (rc.Height + 7) / 8, 1);
 		}
 
-		VkUtilImageBarrier(cmd, rc.AmbientOcclusionTexture.Image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
+		VkUtilImageBarrier(cmd, rc.ScreenSpaceAmbientOcclusionTexture.Image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT);
 
 		VkPopLabel(cmd);
 	}

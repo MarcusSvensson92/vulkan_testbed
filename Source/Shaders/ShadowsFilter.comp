@@ -24,7 +24,7 @@ void main()
 	vec2 center_lin_depth = texelFetch(LinearDepth, coord, 0).rg;
 
 	float phi_variance = sqrt(max(1e-6, center_shadow_variance.g)) * PhiVariance;
-	float phi_depth = (center_lin_depth.g * 8.0 + 1e-4) * StepSize;
+	float phi_depth = center_lin_depth.g * 8.0 + 1e-4;
 
 	vec2 shadow_variance_sum = center_shadow_variance;
 	float shadow_variance_weight_sum = 1.0;

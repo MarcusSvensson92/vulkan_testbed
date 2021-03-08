@@ -13,6 +13,7 @@ void RenderModel::Create(const RenderContext& rc)
         { 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
         { 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
 		{ 7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
+		{ 8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, NULL },
     };
     VkDescriptorSetLayoutCreateInfo set_layout_info = {};
     set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -192,8 +193,9 @@ void RenderModel::DrawDepth(const RenderContext& rc, VkCommandBuffer cmd, uint32
 						{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, metallic_roughness_texture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.AnisoWrap },
 						{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, m_AmbientLightLUT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.LinearClamp },
 						{ 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, m_DirectionalLightLUT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.LinearClamp },
-						{ 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.AmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
-						{ 7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.ShadowTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp }
+						{ 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.ScreenSpaceAmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
+						{ 7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.RayTracedAmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
+						{ 8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.ShadowTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
 					});
 				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PipelineLayout, 0, 1, &set, 0, NULL);
 
@@ -282,6 +284,9 @@ void RenderModel::DrawColor(const RenderContext& rc, VkCommandBuffer cmd, uint32
 					uint32_t	HasBaseColorTexture;
 					uint32_t	HasNormalTexture;
 					uint32_t	HasMetallicRoughnessTexture;
+					uint32_t	EnableScreenSpaceAmbientOcclusion;
+					uint32_t	EnableRayTracedAmbientOcclusion;
+					uint32_t	EnableRayTracedShadows;
 					uint32_t	DebugEnable;
 					uint32_t	DebugIndex;
 				};
@@ -298,6 +303,9 @@ void RenderModel::DrawColor(const RenderContext& rc, VkCommandBuffer cmd, uint32
 				constants->HasBaseColorTexture = material.HasBaseColorTexture;
 				constants->HasNormalTexture = material.HasNormalTexture;
 				constants->HasMetallicRoughnessTexture = material.HasMetallicRoughnessTexture;
+				constants->EnableScreenSpaceAmbientOcclusion = rc.EnableScreenSpaceAmbientOcclusion;
+				constants->EnableRayTracedAmbientOcclusion = rc.EnableRayTracedAmbientOcclusion && Vk.IsRayTracingSupported;
+				constants->EnableRayTracedShadows = rc.EnableRayTracedShadows && Vk.IsRayTracingSupported;
 				constants->DebugEnable = rc.DebugEnable;
 				constants->DebugIndex = rc.DebugIndex;
 
@@ -309,8 +317,9 @@ void RenderModel::DrawColor(const RenderContext& rc, VkCommandBuffer cmd, uint32
 						{ 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, metallic_roughness_texture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.AnisoWrap },
 						{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, m_AmbientLightLUT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.LinearClamp },
 						{ 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, m_DirectionalLightLUT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.LinearClamp },
-						{ 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.AmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
-						{ 7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.ShadowTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp }
+						{ 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.ScreenSpaceAmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
+						{ 7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.RayTracedAmbientOcclusionTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
+						{ 8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, rc.ShadowTexture.ImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, rc.NearestClamp },
 					});
 				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PipelineLayout, 0, 1, &set, 0, NULL);
 

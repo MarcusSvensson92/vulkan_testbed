@@ -159,6 +159,10 @@ void App::Initialize(uint32_t width, uint32_t height, const char* title)
 
 	m_RenderContext.SunDirection = glm::vec3(0.0f, 1.0f, 0.15f);
 
+	m_RenderContext.EnableScreenSpaceAmbientOcclusion = true;
+	m_RenderContext.EnableRayTracedAmbientOcclusion = Vk.IsRayTracingSupported;
+	m_RenderContext.EnableRayTracedShadows = Vk.IsRayTracingSupported;
+
 	m_RenderContext.DebugEnable = false;
 	m_RenderContext.DebugIndex = 0;
 
@@ -172,6 +176,7 @@ void App::Initialize(uint32_t width, uint32_t height, const char* title)
 	m_RenderModel.Create(m_RenderContext);
 	m_RenderMotion.Create(m_RenderContext);
 	m_RenderSSAO.Create(m_RenderContext);
+	m_RenderAO.Create(m_RenderContext);
 	m_RenderShadows.Create(m_RenderContext);
 	m_RenderAtmosphere.Create(m_RenderContext);
 	m_RenderPostProcess.Create(m_RenderContext);
@@ -188,6 +193,7 @@ void App::Terminate()
 	m_RenderModel.Destroy();
 	m_RenderMotion.Destroy();
 	m_RenderSSAO.Destroy();
+	m_RenderAO.Destroy();
 	m_RenderShadows.Destroy();
 	m_RenderAtmosphere.Destroy();
 	m_RenderPostProcess.Destroy();
@@ -276,29 +282,34 @@ void App::CreateResolutionDependentResources(uint32_t width, uint32_t height)
 	motion_texture_params.InitialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	m_RenderContext.MotionTexture = VkTextureCreate(motion_texture_params);
 
-	VkTextureCreateParams ambient_occlusion_texture_params;
-	ambient_occlusion_texture_params.Type = VK_IMAGE_TYPE_2D;
-	ambient_occlusion_texture_params.ViewType = VK_IMAGE_VIEW_TYPE_2D;
-	ambient_occlusion_texture_params.Width = width;
-	ambient_occlusion_texture_params.Height = height;
-	ambient_occlusion_texture_params.Format = VK_FORMAT_R8_UNORM;
-	ambient_occlusion_texture_params.Usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-	ambient_occlusion_texture_params.InitialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	m_RenderContext.AmbientOcclusionTexture = VkTextureCreate(ambient_occlusion_texture_params);
+	VkTextureCreateParams screen_space_ambient_occlusion_texture_params;
+	screen_space_ambient_occlusion_texture_params.Type = VK_IMAGE_TYPE_2D;
+	screen_space_ambient_occlusion_texture_params.ViewType = VK_IMAGE_VIEW_TYPE_2D;
+	screen_space_ambient_occlusion_texture_params.Width = width;
+	screen_space_ambient_occlusion_texture_params.Height = height;
+	screen_space_ambient_occlusion_texture_params.Format = VK_FORMAT_R8_UNORM;
+	screen_space_ambient_occlusion_texture_params.Usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	screen_space_ambient_occlusion_texture_params.InitialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	m_RenderContext.ScreenSpaceAmbientOcclusionTexture = VkTextureCreate(screen_space_ambient_occlusion_texture_params);
 
-	const size_t no_shadow_size = width * height * sizeof(uint16_t);
-	std::vector<uint8_t> no_shadow(no_shadow_size);
-	memset(no_shadow.data(), 0xff, no_shadow_size);
+	VkTextureCreateParams ray_traced_ambient_occlusion_texture_params;
+	ray_traced_ambient_occlusion_texture_params.Type = VK_IMAGE_TYPE_2D;
+	ray_traced_ambient_occlusion_texture_params.ViewType = VK_IMAGE_VIEW_TYPE_2D;
+	ray_traced_ambient_occlusion_texture_params.Width = width;
+	ray_traced_ambient_occlusion_texture_params.Height = height;
+	ray_traced_ambient_occlusion_texture_params.Format = VK_FORMAT_R8_UNORM;
+	ray_traced_ambient_occlusion_texture_params.Usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	ray_traced_ambient_occlusion_texture_params.InitialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	m_RenderContext.RayTracedAmbientOcclusionTexture = VkTextureCreate(ray_traced_ambient_occlusion_texture_params);
+
 	VkTextureCreateParams shadow_texture_params;
 	shadow_texture_params.Type = VK_IMAGE_TYPE_2D;
 	shadow_texture_params.ViewType = VK_IMAGE_VIEW_TYPE_2D;
 	shadow_texture_params.Width = width;
 	shadow_texture_params.Height = height;
 	shadow_texture_params.Format = VK_FORMAT_R16_UNORM;
-	shadow_texture_params.Usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	shadow_texture_params.Usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 	shadow_texture_params.InitialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	shadow_texture_params.Data = no_shadow.data();
-	shadow_texture_params.DataSize = no_shadow_size;
 	m_RenderContext.ShadowTexture = VkTextureCreate(shadow_texture_params);
 
 	VkTextureCreateParams linear_depth_texture_params;
@@ -380,7 +391,8 @@ void App::DestroyResolutionDependentResources()
 	VkTextureDestroy(m_RenderContext.UiTexture);
 	VkTextureDestroy(m_RenderContext.NormalTexture);
 	VkTextureDestroy(m_RenderContext.MotionTexture);
-	VkTextureDestroy(m_RenderContext.AmbientOcclusionTexture);
+	VkTextureDestroy(m_RenderContext.ScreenSpaceAmbientOcclusionTexture);
+	VkTextureDestroy(m_RenderContext.RayTracedAmbientOcclusionTexture);
 	VkTextureDestroy(m_RenderContext.ShadowTexture);
 	VkTextureDestroy(m_RenderContext.LinearDepthTextures[0]);
 	VkTextureDestroy(m_RenderContext.LinearDepthTextures[1]);
@@ -407,6 +419,7 @@ void App::Run()
 			CreateResolutionDependentResources(m_Width, m_Height);
 
 			m_RenderSSAO.RecreateResolutionDependentResources(m_RenderContext);
+			m_RenderAO.RecreateResolutionDependentResources(m_RenderContext);
 			m_RenderShadows.RecreateResolutionDependentResources(m_RenderContext);
 			m_RenderPostProcess.RecreateResolutionDependentResources(m_RenderContext);
 
@@ -426,6 +439,7 @@ void App::Run()
 			m_RenderModel.RecreatePipelines(m_RenderContext);
 			m_RenderMotion.RecreatePipelines(m_RenderContext);
 			m_RenderSSAO.RecreatePipelines(m_RenderContext);
+			m_RenderAO.RecreatePipelines(m_RenderContext);
 			m_RenderShadows.RecreatePipelines(m_RenderContext);
 			//m_RenderAtmosphere.RecreatePipelines(m_RenderContext);
 			m_RenderPostProcess.RecreatePipelines(m_RenderContext);
@@ -461,15 +475,27 @@ void App::Run()
 			}
 			if (ImGui::CollapsingHeader("SSAO"))
 			{
-				ImGui::SliderFloat("Radius", &m_RenderSSAO.m_Radius, 0.0f, 5.0f);
+				ImGui::Checkbox("Enable##SSAO", &m_RenderContext.EnableScreenSpaceAmbientOcclusion);
+				ImGui::SliderFloat("Radius##SSAO", &m_RenderSSAO.m_Radius, 0.0f, 5.0f);
 				ImGui::SliderFloat("Bias", &m_RenderSSAO.m_Bias, 0.0f, 1.0f);
 				ImGui::SliderFloat("Intensity", &m_RenderSSAO.m_Intensity, 0.0f, 10.0f);
 
 				ImGui::Checkbox("Blur", &m_RenderSSAO.m_Blur);
 			}
+			if (ImGui::CollapsingHeader("Ray Traced AO"))
+			{
+				ImGui::Checkbox("Enable##AO", &m_RenderContext.EnableRayTracedAmbientOcclusion);
+				ImGui::SliderFloat("Radius##AO", &m_RenderAO.m_Radius, 0.0f, 10.0f);
+				ImGui::SliderFloat("Falloff", &m_RenderAO.m_Falloff, -4.0f, 4.0f);
+
+				ImGui::Checkbox("Filter##AO", &m_RenderAO.m_Filter);
+				ImGui::SliderInt("Filter Iterations##AO", &m_RenderAO.m_FilterIterations, 1, 4);
+				ImGui::SliderFloat("Filter Kernel Sigma", &m_RenderAO.m_FilterKernelSigma, 0.0f, 8.0f);
+				ImGui::SliderFloat("Filter Depth Sigma", &m_RenderAO.m_FilterDepthSigma, 0.0f, 8.0f);
+			}
 			if (ImGui::CollapsingHeader("Ray Traced Shadows"))
 			{
-				ImGui::Checkbox("Enable##Shadows", &m_RenderShadows.m_Enable);
+				ImGui::Checkbox("Enable##Shadows", &m_RenderContext.EnableRayTracedShadows);
 				ImGui::Checkbox("Alpha Test", &m_RenderShadows.m_AlphaTest);
 				ImGui::SliderFloat("Cone Angle", &m_RenderShadows.m_ConeAngle, 0.0f, 15.0f);
 
@@ -477,7 +503,7 @@ void App::Run()
 				ImGui::SliderFloat("Reproject Alpha Shadow", &m_RenderShadows.m_ReprojectAlphaShadow, 0.0f, 1.0f);
 				ImGui::SliderFloat("Reproject Alpha Moments", &m_RenderShadows.m_ReprojectAlphaMoments, 0.0f, 1.0f);
 				
-				ImGui::Checkbox("Filter", &m_RenderShadows.m_Filter);
+				ImGui::Checkbox("Filter##Shadows", &m_RenderShadows.m_Filter);
 				ImGui::SliderInt("Filter Iterations", &m_RenderShadows.m_FilterIterations, 0, 6);
 				ImGui::SliderFloat("Filter Phi Variance", &m_RenderShadows.m_FilterPhiVariance, 0.0f, 20.0f);
 			}
@@ -560,8 +586,9 @@ void App::Run()
 					"Microfacet Distribution",
 					"Geometric Occlusion",
 					"Specular Reflection",
-					"Shadow",
-					"Ambient Occlusion"
+					"Screen Space Ambient Occlusion",
+					"Ray Traced Ambient Occlusion",
+					"Ray Traced Shadows",
 				};
 				const int32_t debug_name_count = static_cast<int32_t>(sizeof(debug_names) / sizeof(*debug_names));
 
@@ -574,9 +601,11 @@ void App::Run()
 			ImGui::Begin("Performance (ms)");
 			{
 				ImGui::Text("Models Depth:              %.3f", VkGetLabel("Models Depth"));
+				ImGui::Text("Motion Generate:           %.3f", VkGetLabel("Motion Generate"));
 				ImGui::Text("SSAO Generate:             %.3f", VkGetLabel("SSAO Generate"));
 				ImGui::Text("SSAO Blur:                 %.3f", VkGetLabel("SSAO Blur"));
-				ImGui::Text("Motion Generate:           %.3f", VkGetLabel("Motion Generate"));
+				ImGui::Text("AO Trace Rays:             %.3f", VkGetLabel("AO Trace Rays"));
+				ImGui::Text("AO Filter:                 %.3f", VkGetLabel("AO Filter"));
 				ImGui::Text("Shadows Trace Rays:        %.3f", VkGetLabel("Shadows Trace Rays"));
 				ImGui::Text("Shadows Reproject:         %.3f", VkGetLabel("Shadows Reproject"));
 				ImGui::Text("Shadows Filter:            %.3f", VkGetLabel("Shadows Filter"));
@@ -602,6 +631,9 @@ void App::Run()
 
 			// Generate SSAO
 			m_RenderSSAO.Generate(m_RenderContext, cmd);
+
+			// Ray trace AO
+			m_RenderAO.RayTrace(m_RenderContext, cmd, m_AccelerationStructure);
 
 			// Ray trace shadows
 			m_RenderShadows.RayTrace(m_RenderContext, cmd, m_AccelerationStructure);

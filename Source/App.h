@@ -5,6 +5,7 @@
 #include "RenderModel.h"
 #include "RenderSSAO.h"
 #include "RenderMotion.h"
+#include "RenderRayTracedAO.h"
 #include "RenderRayTracedShadows.h"
 #include "RenderAtmosphere.h"
 #include "RenderPostProcess.h"
@@ -30,6 +31,7 @@ public:
 	RenderModel				m_RenderModel;
 	RenderMotion			m_RenderMotion;
 	RenderSSAO				m_RenderSSAO;
+	RenderRayTracedAO		m_RenderAO;
 	RenderRayTracedShadows	m_RenderShadows;
 	RenderAtmosphere		m_RenderAtmosphere;
 	RenderPostProcess		m_RenderPostProcess;
