@@ -321,7 +321,7 @@ void RenderRayTracedAO::RayTrace(const RenderContext& rc, VkCommandBuffer cmd, c
 		hit_shader_binding_table.stride = m_ShaderGroupHandleSize;
 		hit_shader_binding_table.size = m_ShaderGroupHandleSize;
 		VkStridedDeviceAddressRegionKHR callable_shader_binding_table;
-		callable_shader_binding_table.deviceAddress = VK_NULL_HANDLE;
+		callable_shader_binding_table.deviceAddress = 0;
 		callable_shader_binding_table.stride = 0;
 		callable_shader_binding_table.size = 0;
 		vkCmdTraceRaysKHR(cmd, &raygen_shader_binding_table, &miss_shader_binding_table, &hit_shader_binding_table, &callable_shader_binding_table, rc.Width, rc.Height, 1);

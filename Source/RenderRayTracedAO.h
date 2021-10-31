@@ -16,7 +16,7 @@ public:
 
 	VkBuffer										m_ShaderBindingTableBuffer							= VK_NULL_HANDLE;
     VmaAllocation									m_ShaderBindingTableBufferAllocation				= VK_NULL_HANDLE;
-	VkDeviceAddress									m_ShaderBindingTableBufferDeviceAddress				= VK_NULL_HANDLE;
+	VkDeviceAddress									m_ShaderBindingTableBufferDeviceAddress				= 0;
     uint32_t										m_ShaderGroupHandleSize								= 0;
     uint32_t										m_ShaderGroupHandleAlignedSize						= 0;
 
